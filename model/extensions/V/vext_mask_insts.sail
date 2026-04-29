@@ -312,28 +312,59 @@ function clause execute(VIOTA_M(vm, vs2, vd)) = {
   if illegal_normal(vd, vm) | not(assert_vstart(0)) | vd == vs2
   then return Illegal_Instruction();
 
-  let 'n = num_elem;
-  let 'm = SEW;
-
-  let vm_val  : bits('n)     = read_vmask(num_elem, vm, zvreg);
-  let vs2_val : bits('n)     = read_vmask(num_elem, 0b0, vs2);
-  let vd_val  : vector('n, bits('m)) = read_vreg(num_elem, SEW, LMUL_pow, vd);
-
-  let (initial_result, mask) : (vector('n, bits('m)), bits('n)) = match init_masked_result(num_elem, SEW, LMUL_pow, vd_val, vm_val) {
-    Ok(v)   => v,
-    Err(()) => return Illegal_Instruction()
-  };
-  var result = initial_result;
-
   var sum : int = 0;
-  foreach (i from 0 to (num_elem - 1)) {
-    if mask[i] == bitone then {
-      result[i] = to_bits_unsafe(SEW, sum);
-      if vs2_val[i] == bitone then sum = sum + 1
+  let vs2_mask : bits(vlen) = V(vs2);
+
+  if SEW == 8 then {
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        assert(i < vlen);
+        write_single_element(8, i, vd, to_bits_unsafe(8, sum));
+        if vs2_mask[i] == bitone then sum = sum + 1
+      }
+    }
+  } else if SEW == 16 then {
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        assert(i < vlen);
+        write_single_element(16, i, vd, to_bits_unsafe(16, sum));
+        if vs2_mask[i] == bitone then sum = sum + 1
+      }
+    }
+  } else if SEW == 32 then {
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        assert(i < vlen);
+        write_single_element(32, i, vd, to_bits_unsafe(32, sum));
+        if vs2_mask[i] == bitone then sum = sum + 1
+      }
+    }
+  } else {
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        assert(i < vlen);
+        write_single_element(64, i, vd, to_bits_unsafe(64, sum));
+        if vs2_mask[i] == bitone then sum = sum + 1
+      }
     }
   };
 
-  write_vreg(num_elem, SEW, LMUL_pow, vd, result);
   set_vstart(zeros());
   RETIRE_SUCCESS
 }
@@ -355,23 +386,39 @@ function clause execute(VID_V(vm, vd)) = {
 
   if illegal_normal(vd, vm) then return Illegal_Instruction();
 
-  let 'n = num_elem;
-  let 'm = SEW;
-
-  let vm_val  : bits('n)     = read_vmask(num_elem, vm, zvreg);
-  let vd_val  : vector('n, bits('m)) = read_vreg(num_elem, SEW, LMUL_pow, vd);
-
-  let (initial_result, mask) : (vector('n, bits('m)), bits('n)) = match init_masked_result(num_elem, SEW, LMUL_pow, vd_val, vm_val) {
-    Ok(v)    => v,
-    Err(())  => return Illegal_Instruction()
+  if SEW == 8 then {
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then write_single_element(8, i, vd, to_bits_unsafe(8, i))
+    }
+  } else if SEW == 16 then {
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then write_single_element(16, i, vd, to_bits_unsafe(16, i))
+    }
+  } else if SEW == 32 then {
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then write_single_element(32, i, vd, to_bits_unsafe(32, i))
+    }
+  } else {
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then write_single_element(64, i, vd, to_bits_unsafe(64, i))
+    }
   };
-  var result = initial_result;
-
-  foreach (i from 0 to (num_elem - 1)) {
-    if mask[i] == bitone then result[i] = to_bits_unsafe(SEW, i)
-  };
-
-  write_vreg(num_elem, SEW, LMUL_pow, vd, result);
   set_vstart(zeros());
   RETIRE_SUCCESS
 }

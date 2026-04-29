@@ -20,28 +20,22 @@ mapping clause assembly = VCLMUL_VV (vm, vs2, vs1, vd)
 function clause execute (VCLMUL_VV(vm, vs2, vs1, vd)) = {
   let SEW       = get_sew();
   let LMUL_pow  = get_lmul_pow();
+  let num_elem  = get_num_elem(LMUL_pow, SEW);
 
-  let 'n = get_num_elem(LMUL_pow, SEW);
-  let 'm = SEW;
+  if SEW != 64 then return Illegal_Instruction();
 
-  let vm_val  : bits('n) = read_vmask('n, vm, zvreg);
-  let vd_val  : vector('n, bits('m)) = read_vreg('n, SEW, LMUL_pow, vd);
-  let vs1_val : vector('n, bits('m)) = read_vreg('n, SEW, LMUL_pow, vs1);
-  let vs2_val : vector('n, bits('m)) = read_vreg('n, SEW, LMUL_pow, vs2);
-
-  let (initial_result, mask) : (vector('n, bits('m)), bits('n)) = match init_masked_result('n, SEW, LMUL_pow, vd_val, vm_val) {
-    Ok(v)   => v,
-    Err(()) => return Illegal_Instruction()
-  };
-  var result = initial_result;
-
-  foreach (i from 0 to ('n - 1)) {
-    if mask[i] == bitone then {
-      let prod  = carryless_mul(vs1_val[i], vs2_val[i]);
-      result[i] = prod['m - 1 .. 0];
+  foreach (i from 0 to (num_elem - 1)) {
+    let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+      Ok(v)   => v,
+      Err(()) => return Illegal_Instruction()
+    };
+    if active then {
+      let vs1_val : bits(64) = read_single_element(64, i, vs1);
+      let vs2_val : bits(64) = read_single_element(64, i, vs2);
+      let prod : bits(128) = carryless_mul(vs1_val, vs2_val);
+      write_single_element(64, i, vd, prod[63 .. 0])
     }
   };
-  write_vreg('n, SEW, LMUL_pow, vd, result);
   set_vstart(zeros());
   RETIRE_SUCCESS
 }
@@ -58,29 +52,23 @@ mapping clause assembly = VCLMUL_VX (vm, vs2, rs1, vd)
 function clause execute (VCLMUL_VX(vm, vs2, rs1, vd)) = {
   let SEW       = get_sew();
   let LMUL_pow  = get_lmul_pow();
+  let num_elem  = get_num_elem(LMUL_pow, SEW);
 
-  let 'n = get_num_elem(LMUL_pow, SEW);
-  let 'm = SEW;
+  if SEW != 64 then return Illegal_Instruction();
 
-  let vm_val  : bits('n) = read_vmask('n, vm, zvreg);
-  let vd_val  : vector('n, bits('m)) = read_vreg('n, SEW, LMUL_pow, vd);
+  let rs1_val : bits(64) = get_scalar(rs1, 64);
 
-  let rs1_val : bits('m) = get_scalar(rs1, SEW);
-  let vs2_val : vector('n, bits('m)) = read_vreg('n, SEW, LMUL_pow, vs2);
-
-  let (initial_result, mask) : (vector('n, bits('m)), bits('n)) = match init_masked_result('n, SEW, LMUL_pow, vd_val, vm_val) {
-    Ok(v)   => v,
-    Err(()) => return Illegal_Instruction()
-  };
-  var result = initial_result;
-
-  foreach (i from 0 to ('n - 1)) {
-    if mask[i] == bitone then {
-      let prod  = carryless_mul(rs1_val, vs2_val[i]);
-      result[i] = prod['m - 1 .. 0];
+  foreach (i from 0 to (num_elem - 1)) {
+    let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+      Ok(v)   => v,
+      Err(()) => return Illegal_Instruction()
+    };
+    if active then {
+      let vs2_val : bits(64) = read_single_element(64, i, vs2);
+      let prod : bits(128) = carryless_mul(rs1_val, vs2_val);
+      write_single_element(64, i, vd, prod[63 .. 0])
     }
   };
-  write_vreg('n, SEW, LMUL_pow, vd, result);
   set_vstart(zeros());
   RETIRE_SUCCESS
 }
@@ -97,28 +85,22 @@ mapping clause assembly = VCLMULH_VV (vm, vs2, vs1, vd)
 function clause execute (VCLMULH_VV(vm, vs2, vs1, vd)) = {
   let SEW       = get_sew();
   let LMUL_pow  = get_lmul_pow();
+  let num_elem  = get_num_elem(LMUL_pow, SEW);
 
-  let 'n = get_num_elem(LMUL_pow, SEW);
-  let 'm = SEW;
+  if SEW != 64 then return Illegal_Instruction();
 
-  let vm_val  : bits('n) = read_vmask('n, vm, zvreg);
-  let vd_val  : vector('n, bits('m)) = read_vreg('n, SEW, LMUL_pow, vd);
-  let vs1_val : vector('n, bits('m)) = read_vreg('n, SEW, LMUL_pow, vs1);
-  let vs2_val : vector('n, bits('m)) = read_vreg('n, SEW, LMUL_pow, vs2);
-
-  let (initial_result, mask) : (vector('n, bits('m)), bits('n)) = match init_masked_result('n, SEW, LMUL_pow, vd_val, vm_val) {
-    Ok(v)   => v,
-    Err(()) => return Illegal_Instruction()
-  };
-  var result = initial_result;
-
-  foreach (i from 0 to ('n - 1)) {
-    if mask[i] == bitone then {
-      let prod  = carryless_mul(vs1_val[i], vs2_val[i]);
-      result[i] = prod[2 * SEW - 1 .. SEW];
+  foreach (i from 0 to (num_elem - 1)) {
+    let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+      Ok(v)   => v,
+      Err(()) => return Illegal_Instruction()
+    };
+    if active then {
+      let vs1_val : bits(64) = read_single_element(64, i, vs1);
+      let vs2_val : bits(64) = read_single_element(64, i, vs2);
+      let prod : bits(128) = carryless_mul(vs1_val, vs2_val);
+      write_single_element(64, i, vd, prod[127 .. 64])
     }
   };
-  write_vreg('n, SEW, LMUL_pow, vd, result);
   set_vstart(zeros());
   RETIRE_SUCCESS
 }
@@ -135,29 +117,23 @@ mapping clause assembly = VCLMULH_VX (vm, vs2, rs1, vd)
 function clause execute (VCLMULH_VX(vm, vs2, rs1, vd)) = {
   let SEW       = get_sew();
   let LMUL_pow  = get_lmul_pow();
+  let num_elem  = get_num_elem(LMUL_pow, SEW);
 
-  let 'n = get_num_elem(LMUL_pow, SEW);
-  let 'm = SEW;
+  if SEW != 64 then return Illegal_Instruction();
 
-  let vm_val  : bits('n) = read_vmask('n, vm, zvreg);
-  let vd_val  : vector('n, bits('m)) = read_vreg('n, SEW, LMUL_pow, vd);
+  let rs1_val : bits(64) = get_scalar(rs1, 64);
 
-  let rs1_val : bits('m) = get_scalar(rs1, SEW);
-  let vs2_val : vector('n, bits('m)) = read_vreg('n, SEW, LMUL_pow, vs2);
-
-  let (initial_result, mask) : (vector('n, bits('m)), bits('n)) = match init_masked_result('n, SEW, LMUL_pow, vd_val, vm_val) {
-    Ok(v)   => v,
-    Err(()) => return Illegal_Instruction()
-  };
-  var result = initial_result;
-
-  foreach (i from 0 to ('n - 1)) {
-    if mask[i] == bitone then {
-      let prod  = carryless_mul(rs1_val, vs2_val[i]);
-      result[i] = prod[2 * SEW - 1 .. SEW];
+  foreach (i from 0 to (num_elem - 1)) {
+    let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+      Ok(v)   => v,
+      Err(()) => return Illegal_Instruction()
+    };
+    if active then {
+      let vs2_val : bits(64) = read_single_element(64, i, vs2);
+      let prod : bits(128) = carryless_mul(rs1_val, vs2_val);
+      write_single_element(64, i, vd, prod[127 .. 64])
     }
   };
-  write_vreg('n, SEW, LMUL_pow, vd, result);
   set_vstart(zeros());
   RETIRE_SUCCESS
 }

@@ -25,4 +25,4 @@ function clause read_CSR(0x14D) = stimecmp[xlen - 1 .. 0]
 function clause read_CSR(0x15D if xlen == 32) = stimecmp[63 .. 32]
 
 function clause write_CSR(0x14D, value) = { stimecmp[(xlen - 1) .. 0] = value; Ok(stimecmp[xlen - 1 ..0]) }
-function clause write_CSR((0x15D, value) if xlen == 32) = { stimecmp[63 ..32] = value; Ok(stimecmp[63 .. 32]) }
+function clause write_CSR((0x15D, value) if xlen == 32) = { stimecmp[63 ..32] = value[31 .. 0]; Ok(zero_extend(stimecmp[63 .. 32])) }

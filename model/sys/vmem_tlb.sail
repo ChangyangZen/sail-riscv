@@ -67,7 +67,6 @@ function tlb_get_ppn forall 'v, is_sv_mode('v) . (
 // 64 entries is based on benchmarks of Linux boots and is where you stop
 // seeing performance improvements.
 type num_tlb_entries : Int = 64
-type tlb_index_range = range(0, num_tlb_entries - 1)
 
 // PRIVATE
 register tlb : vector(num_tlb_entries, option(TLB_Entry)) = vector_init(None())
@@ -76,14 +75,14 @@ register tlb : vector(num_tlb_entries, option(TLB_Entry)) = vector_init(None())
 function tlb_hash forall 'v, is_sv_mode('v) . (
   sv_mode : int('v),
   vpn     : vpn_bits('v),
-) -> tlb_index_range =
+) -> range(0, 63) =
   unsigned(vpn[5 .. 0])
 
 // PUBLIC: invoked in reset_vmem() [vmem.sail]
 function reset_TLB() -> unit = tlb = vector_init(None())
 
 // PUBLIC: invoked in translate_TLB_hit() [vmem.sail]
-function write_TLB(index : tlb_index_range, entry : TLB_Entry) -> unit =
+function write_TLB(index : range(0, 63), entry : TLB_Entry) -> unit =
   tlb[index] = Some(entry)
 
 // PRIVATE
@@ -117,12 +116,12 @@ function lookup_TLB forall 'v, is_sv_mode('v) . (
   sv_width : int('v),
   asid     : asidbits,
   vpn      : vpn_bits('v),
-) -> option((tlb_index_range, TLB_Entry)) = {
+) -> option(TLB_Entry) = {
   let index = tlb_hash('v, vpn);
   match tlb[index] {
     None() => None(),
     Some(entry) => {
-      if match_TLB_Entry(entry, asid, sign_extend(vpn)) then Some((index, entry)) else None()
+      if match_TLB_Entry(entry, asid, sign_extend(vpn)) then Some(entry) else None()
     },
   }
 }

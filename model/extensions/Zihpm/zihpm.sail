@@ -218,7 +218,7 @@ function write_mhpmcounterh(index : hpmidx, value : bits(32)) -> unit =
 function write_mhpmevent(index : hpmidx, value : xlenbits) -> unit =
   if sys_writable_hpm_counters[index] == bitone then
   mhpmevent[index] = legalize_hpmevent(Mk_HpmEvent(match xlen {
-    32 => mhpmevent[index].bits[63 .. 32] @ value,
+    32 => mhpmevent[index].bits[63 .. 32] @ value[31 .. 0],
     64 => value,
     _ => internal_error(__FILE__, __LINE__, "Unsupported xlen"),
   }))
@@ -246,8 +246,8 @@ function clause write_CSR((0b1011000 /* 0xB00 */ @ index : bits(5), value) if un
 }
 function clause write_CSR((0b1011100 /* 0xB80 */ @ index : bits(5), value) if xlen == 32 & unsigned(index) >= 3) = {
   let index = hpmidx_from_bits(index);
-  write_mhpmcounterh(index, value);
-  Ok(read_mhpmcounterh(index))
+  write_mhpmcounterh(index, value[31 .. 0]);
+  Ok(zero_extend(read_mhpmcounterh(index)))
 }
 
 // Hardware Performance Monitoring user mode counters

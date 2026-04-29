@@ -89,11 +89,11 @@ function pt_walk(
 ) = {
   // Extract the PPN component for this level; 10 bits on Sv32, otherwise 9.
   let 'vpn_i_size = if 'v == 32 then 10 else 9;
-  let vpn_i = vpn[(level + 1) * vpn_i_size - 1 .. level * vpn_i_size];
+  let vpn_i = unsigned(vpn >> (level * vpn_i_size)) % (2 ^ vpn_i_size);
   let 'log_pte_size_bytes = if 'v == 32 then 2 else 3;
 
   // Address of PTE in page table. This is 34 bits for Sv32, otherwise 56 bits.
-  let pte_addr = pt_base @ vpn_i @ zeros('log_pte_size_bytes);
+  let pte_addr = ((unsigned(pt_base) * (2 ^ vpn_i_size)) + vpn_i) * (2 ^ log_pte_size_bytes);
 
 
   // Convert to a physical address (34 bits for RV32, 64 bits to RV64).
@@ -101,7 +101,7 @@ function pt_walk(
   // pte_addr of 56 bits and physaddr of 34 bits (because you can't
   // use Sv39+ on RV32).
   assert(sv_width == 32 | xlen == 64);
-  let pte_addr = Physaddr(zero_extend(pte_addr));
+  let pte_addr = Physaddr(to_bits_truncate(physaddrbits_len, pte_addr));
 
   // Read this-level PTE from mem (Step 2 of VATP)
   match read_pte(pte_addr, 2 ^ log_pte_size_bytes) {
@@ -131,7 +131,7 @@ function pt_walk(
           if level > 0 then {
             // Check for misaligned superpage.
             let low_bits = ppn_size_bits * level;
-            if   ppn[low_bits - 1 .. 0] != zeros()
+            if   unsigned(ppn) % (2 ^ low_bits) != 0
             then return Err(PTW_Misaligned(), ext_ptw);
           };
           // Steps 6, 7 (TODO: shadow stack protection), 8 of VATP.
@@ -143,7 +143,9 @@ function pt_walk(
                 // Compose final PA in superpage:
                 // Superpage PPN @ lower VPNs @ page-offset
                 let low_bits = ppn_size_bits * level;
-                ppn[length(ppn) - 1 .. low_bits] @ vpn[low_bits - 1 .. 0]
+                let ppn_low = 2 ^ low_bits;
+                let ppn_int = ((unsigned(ppn) / ppn_low) * ppn_low) + (unsigned(vpn) % ppn_low);
+                to_bits_truncate(length(ppn), ppn_int)
               } else {
                 ppn
               };
@@ -172,13 +174,19 @@ function clause write_CSR(0x180, value) = { satp = legalize_satp(architecture(cu
 // ASID is 9b in Sv32, 16b in Sv39/Sv48/Sv57
 // PRIVATE
 val satp_to_asid : forall 'n, 'n in {32, 64}. bits('n) -> bits(if 'n == 32 then 9 else 16)
-function satp_to_asid(satp_val) =
-  if 'n == 32 then Mk_Satp32(satp_val)[Asid] else Mk_Satp64(satp_val)[Asid]
+function satp_to_asid(satp_val) = {
+  let 'asid_width = if 'n == 32 then 9 else 16;
+  let asid = if 'n == 32 then unsigned(Mk_Satp32(satp_val)[Asid]) else unsigned(Mk_Satp64(satp_val)[Asid]);
+  to_bits_truncate(asid_width, asid)
+}
 
 // PRIVATE
 val satp_to_ppn : forall 'n, 'n in {32, 64}. bits('n) -> bits(if 'n == 32 then 22 else 44)
-function satp_to_ppn(satp_val) =
-  if 'n == 32 then Mk_Satp32(satp_val)[PPN] else Mk_Satp64(satp_val)[PPN]
+function satp_to_ppn(satp_val) = {
+  let 'ppn_width = if 'n == 32 then 22 else 44;
+  let ppn = if 'n == 32 then unsigned(Mk_Satp32(satp_val)[PPN]) else unsigned(Mk_Satp64(satp_val)[PPN]);
+  to_bits_truncate(ppn_width, ppn)
+}
 
 // Compute address translation mode from SATP register
 // PRIVATE
@@ -214,7 +222,7 @@ type TR_Result('paddr : Type, 'failure : Type) = result(('paddr, ext_ptw), ('fai
 // This function can be ignored on first reading since TLBs are not
 // part of RISC-V architecture spec (see TLB NOTE above).
 // PRIVATE: translate on TLB hit, and maintenance of PTE in TLB
-function translate_TLB_hit forall 'v, is_sv_mode('v) . (
+function translate_TLB_hit_pte forall 'v 'n, is_sv_mode('v) & 'n in {4, 8} . (
   sv_width  : int('v),
   asid      : asidbits,
   vpn       : vpn_bits('v),
@@ -223,12 +231,10 @@ function translate_TLB_hit forall 'v, is_sv_mode('v) . (
   mxr       : bool,
   do_sum    : bool,
   ext_ptw   : ext_ptw,
-  tlb_index : tlb_index_range,
   ent       : TLB_Entry,
+  pte_size  : int('n),
+  pte       : bits('n * 8),
 ) -> TR_Result(ppn_bits('v), PTW_Error) = {
-
-  let pte_size  = if sv_width == 32 then 4 else 8;
-  let pte       = tlb_get_pte(pte_size, ent);  // Step 2 of VATP.
   let ext_pte   = ext_bits_of_PTE(pte);
   let pte_flags = Mk_PTE_Flags(pte[7 .. 0]);
   let pte_check = check_PTE_permission(ac, priv, mxr, do_sum, pte_flags,
@@ -247,7 +253,7 @@ function translate_TLB_hit forall 'v, is_sv_mode('v) . (
             Err(PTW_PTE_Update(), ext_ptw)
           else {
             // Writeback the PTE (which has new A/D bits)
-            write_TLB(tlb_index, tlb_set_pte(ent, pte'));
+            write_TLB(tlb_hash(sv_width, vpn), tlb_set_pte(ent, pte'));
             match write_pte(ent.pteAddr, pte_size, pte') {
               Ok(_)  => (),
               Err(e) => internal_error(__FILE__, __LINE__,
@@ -256,6 +262,41 @@ function translate_TLB_hit forall 'v, is_sv_mode('v) . (
             Ok(tlb_get_ppn(sv_width, ent, vpn), ext_ptw)
           }
       }
+  }
+}
+
+function normalize_TLB_ppn_result forall 'v 'p, is_sv_mode('v) & 'p >= 0 . (
+  sv_width : int('v),
+  result   : TR_Result(bits('p), PTW_Error),
+) -> TR_Result(ppn_bits('v), PTW_Error) = {
+  let 'ppn_width = if 'v == 32 then 22 else 44;
+  match result {
+    Ok(ppn, ext_ptw) => Ok(to_bits_truncate(ppn_width, unsigned(ppn)), ext_ptw),
+    Err(err, ext_ptw) => Err(err, ext_ptw),
+  }
+}
+
+// PRIVATE: translate on TLB hit, and maintenance of PTE in TLB
+function translate_TLB_hit forall 'v, is_sv_mode('v) . (
+  sv_width  : int('v),
+  asid      : asidbits,
+  vpn       : vpn_bits('v),
+  ac        : AccessType(ext_access_type),
+  priv      : Privilege,
+  mxr       : bool,
+  do_sum    : bool,
+  ext_ptw   : ext_ptw,
+  ent       : TLB_Entry,
+) -> TR_Result(ppn_bits('v), PTW_Error) = {
+  let pte_size = if sv_width == 32 then 4 else 8;
+  if pte_size == 4 then {
+    let pte : bits(32) = tlb_get_pte(4, ent);  // Step 2 of VATP.
+    normalize_TLB_ppn_result(sv_width,
+      translate_TLB_hit_pte(sv_width, asid, vpn, ac, priv, mxr, do_sum, ext_ptw, ent, 4, pte))
+  } else {
+    let pte : bits(64) = tlb_get_pte(8, ent);  // Step 2 of VATP.
+    normalize_TLB_ppn_result(sv_width,
+      translate_TLB_hit_pte(sv_width, asid, vpn, ac, priv, mxr, do_sum, ext_ptw, ent, 8, pte))
   }
 }
 
@@ -333,8 +374,8 @@ function translate forall 'v, is_sv_mode('v) . (
   // On first reading, assume lookup_TLB returns None(), since TLBs
   // are not part of RISC-V archticture spec (see TLB NOTE above)
   match lookup_TLB(sv_width, asid, vpn) {
-    Some(index, ent) => translate_TLB_hit(sv_width, asid, vpn, ac, priv,
-                                          mxr, do_sum, ext_ptw, index, ent),
+    Some(ent)        => translate_TLB_hit(sv_width, asid, vpn, ac, priv,
+                                          mxr, do_sum, ext_ptw, ent),
     None()           => translate_TLB_miss(sv_width, asid, base_ppn, vpn, ac, priv,
                                            mxr, do_sum, ext_ptw),
   }
@@ -348,7 +389,9 @@ function get_satp forall 'v, is_sv_mode('v). (
 ) -> bits(if 'v == 32 then 32 else 64) = {
   // Cannot use Sv39+ on RV32.
   assert('v == 32 | xlen == 64);
-  if sv_width == 32 then satp[31 .. 0] else satp
+  let 'satp_width = if 'v == 32 then 32 else 64;
+  let satp_value = if sv_width == 32 then unsigned(satp[31 .. 0]) else unsigned(satp);
+  to_bits_truncate(satp_width, satp_value)
 }
 
 // Top-level addr-translation function

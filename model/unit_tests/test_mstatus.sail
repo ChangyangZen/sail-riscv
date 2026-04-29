@@ -2,7 +2,7 @@
 $[test]
 function test_mstatus_sxl_uxl_reset_values() -> unit = {
   let mstatush_val : bits(32) = match xlen {
-    32 => read_CSR(0x310),
+    32 => read_CSR(0x310)[31 .. 0],
     64 => read_CSR(0x300)[63 .. 32],
     _  => internal_error(__FILE__, __LINE__, "unsupported xlen"),
   };

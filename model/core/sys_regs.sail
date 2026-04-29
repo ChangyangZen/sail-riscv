@@ -270,8 +270,8 @@ function clause read_CSR(0x300) = mstatus.bits[xlen - 1 .. 0]
 function clause read_CSR(0x310 if xlen == 32) = mstatus.bits[63 .. 32]
 
 function clause write_CSR((0x300, value) if xlen == 64) = { mstatus = legalize_mstatus(mstatus, value); Ok(mstatus.bits) }
-function clause write_CSR((0x300, value) if xlen == 32) = { mstatus = legalize_mstatus(mstatus, mstatus.bits[63 .. 32] @ value); Ok(mstatus.bits[31 .. 0]) }
-function clause write_CSR((0x310, value) if xlen == 32) = { mstatus = legalize_mstatus(mstatus, value @ mstatus.bits[31 .. 0]); Ok(mstatus.bits[63 .. 32]) }
+function clause write_CSR((0x300, value) if xlen == 32) = { mstatus = legalize_mstatus(mstatus, mstatus.bits[63 .. 32] @ value[31 .. 0]); Ok(zero_extend(mstatus.bits[31 .. 0])) }
+function clause write_CSR((0x310, value) if xlen == 32) = { mstatus = legalize_mstatus(mstatus, value[31 .. 0] @ mstatus.bits[31 .. 0]); Ok(zero_extend(mstatus.bits[63 .. 32])) }
 
 // architecture and extension checks
 
@@ -332,16 +332,16 @@ function clause read_CSR(0x747) = mseccfg.bits[xlen - 1 .. 0]
 function clause read_CSR(0x757 if xlen == 32) = mseccfg.bits[63 .. 32]
 
 function clause write_CSR((0x747, value) if xlen == 32) = {
-  mseccfg = legalize_mseccfg(mseccfg, mseccfg.bits[63 .. 32] @ value);
-  Ok(mseccfg.bits[31 .. 0])
+  mseccfg = legalize_mseccfg(mseccfg, mseccfg.bits[63 .. 32] @ value[31 .. 0]);
+  Ok(zero_extend(mseccfg.bits[31 .. 0]))
 }
 function clause write_CSR((0x747, value) if xlen == 64) = {
   mseccfg = legalize_mseccfg(mseccfg, value);
   Ok(mseccfg.bits)
 }
 function clause write_CSR((0x757, value) if xlen == 32) = {
-  mseccfg = legalize_mseccfg(mseccfg, value @ mseccfg.bits[31 .. 0]);
-  Ok(mseccfg.bits[63 .. 32])
+  mseccfg = legalize_mseccfg(mseccfg, value[31 .. 0] @ mseccfg.bits[31 .. 0]);
+  Ok(zero_extend(mseccfg.bits[63 .. 32]))
 }
 
 
@@ -417,9 +417,9 @@ function clause read_CSR(0x30A) = menvcfg.bits[xlen - 1 .. 0]
 function clause read_CSR(0x31A if xlen == 32) = menvcfg.bits[63 .. 32]
 function clause read_CSR(0x10A) = senvcfg.bits[xlen - 1 .. 0]
 
-function clause write_CSR((0x30A, value) if xlen == 32) = { menvcfg = legalize_menvcfg(menvcfg, menvcfg.bits[63 .. 32] @ value); Ok(menvcfg.bits[31 .. 0]) }
+function clause write_CSR((0x30A, value) if xlen == 32) = { menvcfg = legalize_menvcfg(menvcfg, menvcfg.bits[63 .. 32] @ value[31 .. 0]); Ok(zero_extend(menvcfg.bits[31 .. 0])) }
 function clause write_CSR((0x30A, value) if xlen == 64) = { menvcfg = legalize_menvcfg(menvcfg, value); Ok(menvcfg.bits) }
-function clause write_CSR((0x31A, value) if xlen == 32) = { menvcfg = legalize_menvcfg(menvcfg, value @ menvcfg.bits[31 .. 0]); Ok(menvcfg.bits[63 .. 32]) }
+function clause write_CSR((0x31A, value) if xlen == 32) = { menvcfg = legalize_menvcfg(menvcfg, value[31 .. 0] @ menvcfg.bits[31 .. 0]); Ok(zero_extend(menvcfg.bits[63 .. 32])) }
 function clause write_CSR(0x10A, value) = { senvcfg = legalize_senvcfg(senvcfg, zero_extend(value)); Ok(senvcfg.bits[xlen - 1 .. 0]) }
 
 // Return whether or not FIOM is currently active, based on the current
@@ -529,8 +529,8 @@ function clause read_CSR(0x303) = mideleg.bits
 function clause write_CSR(0x304, value) = { mie = legalize_mie(mie, value); Ok(mie.bits) }
 function clause write_CSR(0x344, value) = { mip = legalize_mip(mip, value); Ok(mip.bits) }
 function clause write_CSR((0x302, value) if xlen == 64) = { medeleg = legalize_medeleg(medeleg, value); Ok(medeleg.bits) }
-function clause write_CSR((0x302, value) if xlen == 32) = { medeleg = legalize_medeleg(medeleg, medeleg.bits[63 .. 32] @ value); Ok(medeleg.bits[31 .. 0]) }
-function clause write_CSR((0x312, value) if xlen == 32) = { medeleg = legalize_medeleg(medeleg, value @ medeleg.bits[31 .. 0]); Ok(medeleg.bits[63 .. 32]) }
+function clause write_CSR((0x302, value) if xlen == 32) = { medeleg = legalize_medeleg(medeleg, medeleg.bits[63 .. 32] @ value[31 .. 0]); Ok(zero_extend(medeleg.bits[31 .. 0])) }
+function clause write_CSR((0x312, value) if xlen == 32) = { medeleg = legalize_medeleg(medeleg, value[31 .. 0] @ medeleg.bits[31 .. 0]); Ok(zero_extend(medeleg.bits[63 .. 32])) }
 function clause write_CSR(0x303, value) = { mideleg = legalize_mideleg(mideleg, value); Ok(mideleg.bits) }
 
 // registers for trap handling

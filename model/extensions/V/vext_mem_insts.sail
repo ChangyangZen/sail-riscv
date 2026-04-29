@@ -32,6 +32,63 @@ mapping vlewidth_pow : vlewidth <-> {3, 4, 5, 6} = {
   VLE64     <-> 6
 }
 
+val write_single_element_from_int : (sew_bitsize, nat, vregidx, int) -> unit
+function write_single_element_from_int(SEW, i, vd, value) = {
+  if SEW == 8 then
+    write_single_element(SEW, i, vd, to_bits_truncate(8, value))
+  else if SEW == 16 then
+    write_single_element(SEW, i, vd, to_bits_truncate(16, value))
+  else if SEW == 32 then
+    write_single_element(SEW, i, vd, to_bits_truncate(32, value))
+  else
+    write_single_element(SEW, i, vd, to_bits_truncate(64, value))
+}
+
+val vmem_read_int : (regidx, int, word_width) -> result(int, ExecutionResult)
+function vmem_read_int(rs1, offset, width) = {
+  if width == 1 then {
+    match vmem_read(rs1, to_bits_unsafe(xlen, offset), 1, Read(Data), false, false, false) {
+      Ok(elem) => Ok(unsigned(elem)),
+      Err(e)   => Err(e)
+    }
+  } else if width == 2 then {
+    match vmem_read(rs1, to_bits_unsafe(xlen, offset), 2, Read(Data), false, false, false) {
+      Ok(elem) => Ok(unsigned(elem)),
+      Err(e)   => Err(e)
+    }
+  } else if width == 4 then {
+    match vmem_read(rs1, to_bits_unsafe(xlen, offset), 4, Read(Data), false, false, false) {
+      Ok(elem) => Ok(unsigned(elem)),
+      Err(e)   => Err(e)
+    }
+  } else {
+    match vmem_read(rs1, to_bits_unsafe(xlen, offset), 8, Read(Data), false, false, false) {
+      Ok(elem) => Ok(unsigned(elem)),
+      Err(e)   => Err(e)
+    }
+  }
+}
+
+val read_single_element_int : (sew_bitsize, nat, vregidx) -> int
+function read_single_element_int(SEW, i, vrid) = {
+  if SEW == 8 then unsigned(read_single_element(SEW, i, vrid) : bits(8))
+  else if SEW == 16 then unsigned(read_single_element(SEW, i, vrid) : bits(16))
+  else if SEW == 32 then unsigned(read_single_element(SEW, i, vrid) : bits(32))
+  else unsigned(read_single_element(SEW, i, vrid) : bits(64))
+}
+
+val vmem_write_int : (regidx, int, word_width, int) -> result(bool, ExecutionResult)
+function vmem_write_int(rs1, offset, width, value) = {
+  if width == 1 then
+    vmem_write(rs1, to_bits_unsafe(xlen, offset), 1, to_bits_truncate(8, value), Write(Data), false, false, false)
+  else if width == 2 then
+    vmem_write(rs1, to_bits_unsafe(xlen, offset), 2, to_bits_truncate(16, value), Write(Data), false, false, false)
+  else if width == 4 then
+    vmem_write(rs1, to_bits_unsafe(xlen, offset), 4, to_bits_truncate(32, value), Write(Data), false, false, false)
+  else
+    vmem_write(rs1, to_bits_unsafe(xlen, offset), 8, to_bits_truncate(64, value), Write(Data), false, false, false)
+}
+
 // ******************* Vector Load Unit-Stride Normal & Segment (mop=0b00, lumop=0b00000) *********************
 union clause instruction = VLSEGTYPE : (nfields, bits(1), regidx, vlewidth, vregidx)
 
@@ -42,31 +99,23 @@ mapping clause encdec = VLSEGTYPE(nf, vm, rs1, width, vd)
 val process_vlseg : (nfields, bits(1), vregidx, word_width, regidx, int, nat1) -> ExecutionResult
 function process_vlseg (nf, vm, vd, load_width_bytes, rs1, EMUL_pow, num_elem) = {
   let EMUL_reg = if EMUL_pow <= 0 then 1 else 2 ^ EMUL_pow;
-  let vm_val = read_vmask(num_elem, vm, zvreg);
-  let vd_seg = read_vreg_seg(num_elem, load_width_bytes * 8, EMUL_pow, nf, vd);
-
-  let 'm = nf * load_width_bytes * 8;
-  let 'n = num_elem;
-  let (result, mask) : (vector('n, bits('m)), bits('n)) = match init_masked_result(num_elem, 'm, EMUL_pow, vd_seg, vm_val) {
-    Ok(v)   => v,
-    Err(()) => return Illegal_Instruction()
-  };
 
   foreach (i from 0 to (num_elem - 1)) {
-    if mask[i] == bitone then { // active segments
+    let active : bool = match is_active_vector_element(num_elem, EMUL_pow, vm, i) {
+      Ok(v)   => v,
+      Err(()) => return Illegal_Instruction()
+    };
+    if active then { // active segments
       set_vstart(to_bits_unsafe(16, i));
       foreach (j from 0 to (nf - 1)) {
         let elem_offset = (i * nf + j) * load_width_bytes;
-        match vmem_read(rs1, to_bits_unsafe(xlen, elem_offset), load_width_bytes, Read(Data), false, false, false) {
-          Ok(elem) => write_single_element(load_width_bytes * 8, i, vregidx_offset(vd, to_bits_unsafe(5, j * EMUL_reg)), elem),
+        match vmem_read_int(rs1, elem_offset, load_width_bytes) {
+          Ok(elem) => write_single_element_from_int(load_width_bytes * 8, i, vregidx_offset(vd, to_bits_unsafe(5, j * EMUL_reg)), elem),
           Err(e)   => return e,
         }
       }
     } else { // prestart, masked or tail segments
-      foreach (j from 0 to (nf - 1)) {
-        let skipped_elem = (result[i] >> (j * load_width_bytes * 8))[(load_width_bytes * 8 - 1) .. 0];
-        write_single_element(load_width_bytes * 8, i, vregidx_offset(vd, to_bits_unsafe(5, j * EMUL_reg)), skipped_elem)
-      }
+      ()
     }
   };
 
@@ -103,25 +152,19 @@ mapping clause encdec = VLSEGFFTYPE(nf, vm, rs1, width, vd)
 val process_vlsegff : (nfields, bits(1), vregidx, word_width, regidx, int, nat1) -> ExecutionResult
 function process_vlsegff (nf, vm, vd, load_width_bytes, rs1, EMUL_pow, num_elem) = {
   let EMUL_reg = if EMUL_pow <= 0 then 1 else 2 ^ EMUL_pow;
-  let vm_val = read_vmask(num_elem, vm, zvreg);
-  let vd_seg = read_vreg_seg(num_elem, load_width_bytes * 8, EMUL_pow, nf, vd);
-  let tail_ag = get_vtype_vta();
-
-  let 'm = nf * load_width_bytes * 8;
-  let 'n = num_elem;
-  let (result, mask) : (vector('n, bits('m)), bits('n)) = match init_masked_result(num_elem, nf * load_width_bytes * 8, EMUL_pow, vd_seg, vm_val) {
-    Ok(v)   => v,
-    Err(()) => return Illegal_Instruction()
-  };
 
   var trimmed : bool = false;
   foreach (i from 0 to (num_elem - 1)) {
     if not(trimmed) then {
-      if mask[i] == bitone then { // active segments
+      let active : bool = match is_active_vector_element(num_elem, EMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then { // active segments
         foreach (j from 0 to (nf - 1)) {
           let elem_offset = (i * nf + j) * load_width_bytes;
-          match vmem_read(rs1, to_bits_unsafe(xlen, elem_offset), load_width_bytes, Read(Data), false, false, false) {
-            Ok(elem) => write_single_element(load_width_bytes * 8, i, vregidx_offset(vd, to_bits_unsafe(5, j * EMUL_reg)), elem),
+          match vmem_read_int(rs1, elem_offset, load_width_bytes) {
+            Ok(elem) => write_single_element_from_int(load_width_bytes * 8, i, vregidx_offset(vd, to_bits_unsafe(5, j * EMUL_reg)), elem),
             Err(e)   => if i == 0 then return e
                         else {
                           vl = to_bits_unsafe(xlen, i);
@@ -131,20 +174,11 @@ function process_vlsegff (nf, vm, vd, load_width_bytes, rs1, EMUL_pow, num_elem)
           }
         }
       } else { // prestart, masked or tail segments
-        foreach (j from 0 to (nf - 1)) {
-          let skipped_elem = (result[i] >> (j * load_width_bytes * 8))[(load_width_bytes * 8 - 1) .. 0];
-          write_single_element(load_width_bytes * 8, i, vregidx_offset(vd, to_bits_unsafe(5, j * EMUL_reg)), skipped_elem)
-        }
+        ()
       }
     } else {
       // if vl is trimmed, elements past the new vl are treated as tail elements
-      if tail_ag == AGNOSTIC then {
-        foreach (j from 0 to (nf - 1)) {
-          let skipped_elem = (vd_seg[i] >> (j * load_width_bytes * 8))[(load_width_bytes * 8 - 1) .. 0];
-          write_single_element(load_width_bytes * 8, i, vregidx_offset(vd, to_bits_unsafe(5, j * EMUL_reg)), skipped_elem)
-        }
-        // TODO: configuration support for agnostic behavior
-      }
+      ()
     }
   };
 
@@ -181,23 +215,19 @@ mapping clause encdec = VSSEGTYPE(nf, vm, rs1, width, vs3)
 val process_vsseg : (nfields, bits(1), vregidx, word_width, regidx, int, nat1) -> ExecutionResult
 function process_vsseg (nf, vm, vs3, load_width_bytes, rs1, EMUL_pow, num_elem) = {
   let EMUL_reg = if EMUL_pow <= 0 then 1 else 2 ^ EMUL_pow;
-  let vm_val = read_vmask(num_elem, vm, zvreg);
-  let vs3_seg = read_vreg_seg(num_elem, load_width_bytes * 8, EMUL_pow, nf, vs3);
-
-  let 'n = num_elem;
-  let mask : bits('n) = match init_masked_source(num_elem, EMUL_pow, vm_val) {
-    Ok(v)   => v,
-    Err(()) => return Illegal_Instruction()
-  };
 
   foreach (i from 0 to (num_elem - 1)) {
-    if mask[i] == bitone then { // active segments
+    let active : bool = match is_active_vector_element(num_elem, EMUL_pow, vm, i) {
+      Ok(v)   => v,
+      Err(()) => return Illegal_Instruction()
+    };
+    if active then { // active segments
       set_vstart(to_bits_unsafe(16, i));
       foreach (j from 0 to (nf - 1)) {
         let elem_offset = (i * nf + j) * load_width_bytes;
         let vs = vregidx_offset(vs3, to_bits_unsafe(5, j * EMUL_reg));
-        let data = read_single_element(load_width_bytes * 8, i, vs);
-        match vmem_write(rs1, to_bits_unsafe(xlen, elem_offset), load_width_bytes, data, Write(Data), false, false, false) {
+        let data = read_single_element_int(load_width_bytes * 8, i, vs);
+        match vmem_write_int(rs1, elem_offset, load_width_bytes, data) {
           Ok(true)  => (),
           Ok(false) => internal_error(__FILE__, __LINE__, "store got false from vmem_write"),
           Err(e)    => return e,
@@ -239,32 +269,24 @@ mapping clause encdec = VLSSEGTYPE(nf, vm, rs2, rs1, width, vd)
 val process_vlsseg : (nfields, bits(1), vregidx, word_width, regidx, regidx, int, nat1) -> ExecutionResult
 function process_vlsseg (nf, vm, vd, load_width_bytes, rs1, rs2, EMUL_pow, num_elem) = {
   let EMUL_reg = if EMUL_pow <= 0 then 1 else 2 ^ EMUL_pow;
-  let vm_val  = read_vmask(num_elem, vm, zvreg);
-  let vd_seg  = read_vreg_seg(num_elem, load_width_bytes * 8, EMUL_pow, nf, vd);
   let rs2_val = unsigned(get_scalar(rs2, xlen));
 
-  let 'm = nf * load_width_bytes * 8;
-  let 'n = num_elem;
-  let (result, mask) : (vector('n, bits('m)), bits('n)) = match init_masked_result(num_elem, nf * load_width_bytes * 8, EMUL_pow, vd_seg, vm_val) {
-    Ok(v)   => v,
-    Err(()) => return Illegal_Instruction()
-  };
-
   foreach (i from 0 to (num_elem - 1)) {
-    if mask[i] == bitone then { // active segments
+    let active : bool = match is_active_vector_element(num_elem, EMUL_pow, vm, i) {
+      Ok(v)   => v,
+      Err(()) => return Illegal_Instruction()
+    };
+    if active then { // active segments
       set_vstart(to_bits_unsafe(16, i));
       foreach (j from 0 to (nf - 1)) {
         let elem_offset = i * rs2_val + j * load_width_bytes;
-        match vmem_read(rs1, to_bits_unsafe(xlen, elem_offset), load_width_bytes, Read(Data), false, false, false) {
-          Ok(elem) => write_single_element(load_width_bytes * 8, i, vregidx_offset(vd, to_bits_unsafe(5, j * EMUL_reg)), elem),
+        match vmem_read_int(rs1, elem_offset, load_width_bytes) {
+          Ok(elem) => write_single_element_from_int(load_width_bytes * 8, i, vregidx_offset(vd, to_bits_unsafe(5, j * EMUL_reg)), elem),
           Err(e)   => return e,
         }
       }
     } else { // prestart, masked or tail segments
-      foreach (j from 0 to (nf - 1)) {
-        let skipped_elem = (result[i] >> (j * load_width_bytes * 8))[(load_width_bytes * 8 - 1) .. 0];
-        write_single_element(load_width_bytes * 8, i, vregidx_offset(vd, to_bits_unsafe(5, j * EMUL_reg)), skipped_elem)
-      }
+      ()
     }
   };
 
@@ -301,24 +323,20 @@ mapping clause encdec = VSSSEGTYPE(nf, vm, rs2, rs1, width, vs3)
 val process_vssseg : (nfields, bits(1), vregidx, word_width, regidx, regidx, int, nat1) -> ExecutionResult
 function process_vssseg (nf, vm, vs3, load_width_bytes, rs1, rs2, EMUL_pow, num_elem) = {
   let EMUL_reg = if EMUL_pow <= 0 then 1 else 2 ^ EMUL_pow;
-  let vm_val = read_vmask(num_elem, vm, zvreg);
-  let vs3_seg = read_vreg_seg(num_elem, load_width_bytes * 8, EMUL_pow, nf, vs3);
   let rs2_val = unsigned(get_scalar(rs2, xlen));
 
-  let 'n = num_elem;
-  let mask : bits('n) = match init_masked_source(num_elem, EMUL_pow, vm_val) {
-    Ok(v)   => v,
-    Err(()) => return Illegal_Instruction()
-  };
-
   foreach (i from 0 to (num_elem - 1)) {
-    if mask[i] == bitone then { // active segments
+    let active : bool = match is_active_vector_element(num_elem, EMUL_pow, vm, i) {
+      Ok(v)   => v,
+      Err(()) => return Illegal_Instruction()
+    };
+    if active then { // active segments
       set_vstart(to_bits_unsafe(16, i));
       foreach (j from 0 to (nf - 1)) {
         let elem_offset = i * rs2_val + j * load_width_bytes;
         let vs = vregidx_offset(vs3, to_bits_unsafe(5, j * EMUL_reg));
-        let data = read_single_element(load_width_bytes * 8, i, vs);
-        match vmem_write(rs1, to_bits_unsafe(xlen, elem_offset), load_width_bytes, data, Write(Data), false, false, false) {
+        let data = read_single_element_int(load_width_bytes * 8, i, vs);
+        match vmem_write_int(rs1, elem_offset, load_width_bytes, data) {
           Ok(true)  => (),
           Ok(false) => internal_error(__FILE__, __LINE__, "store got false from vmem_write"),
           Err(e)    => return e,
@@ -360,33 +378,24 @@ mapping clause encdec = VLUXSEGTYPE(nf, vm, vs2, rs1, width, vd)
 val process_vlxseg : (nfields, bits(1), vregidx, word_width, word_width, int, int, regidx, vregidx, nat1, int) -> ExecutionResult
 function process_vlxseg (nf, vm, vd, EEW_index_bytes, EEW_data_bytes, EMUL_index_pow, EMUL_data_pow, rs1, vs2, num_elem, mop) = {
   let EMUL_data_reg = if EMUL_data_pow <= 0 then 1 else 2 ^ EMUL_data_pow;
-  let vm_val = read_vmask(num_elem, vm, zvreg);
-  let vd_seg = read_vreg_seg(num_elem, EEW_data_bytes * 8, EMUL_data_pow, nf, vd);
-  let vs2_val = read_vreg(num_elem, EEW_index_bytes * 8, EMUL_index_pow, vs2);
-
-  let 'm = nf * EEW_data_bytes * 8;
-  let 'n = num_elem;
-  let (result, mask) : (vector('n, bits('m)), bits('n)) = match init_masked_result(num_elem, nf * EEW_data_bytes * 8, EMUL_data_pow, vd_seg, vm_val) {
-    Ok(v)   => v,
-    Err(()) => return Illegal_Instruction()
-  };
 
   // currently mop = 1 (unordered) or 3 (ordered) do the same operations
   foreach (i from 0 to (num_elem - 1)) {
-    if mask[i] == bitone then { // active segments
+    let active : bool = match is_active_vector_element(num_elem, EMUL_data_pow, vm, i) {
+      Ok(v)   => v,
+      Err(()) => return Illegal_Instruction()
+    };
+    if active then { // active segments
       set_vstart(to_bits_unsafe(16, i));
       foreach (j from 0 to (nf - 1)) {
-        let elem_offset : int = unsigned(vs2_val[i]) + j * EEW_data_bytes;
-        match vmem_read(rs1, to_bits_unsafe(xlen, elem_offset), EEW_data_bytes, Read(Data), false, false, false) {
-          Ok(elem) => write_single_element(EEW_data_bytes * 8, i, vregidx_offset(vd, to_bits_unsafe(5, j * EMUL_data_reg)), elem),
+        let elem_offset : int = read_single_element_int(EEW_index_bytes * 8, i, vs2) + j * EEW_data_bytes;
+        match vmem_read_int(rs1, elem_offset, EEW_data_bytes) {
+          Ok(elem) => write_single_element_from_int(EEW_data_bytes * 8, i, vregidx_offset(vd, to_bits_unsafe(5, j * EMUL_data_reg)), elem),
           Err(e)   => return e,
         }
       }
     } else { // prestart, masked or tail segments
-      foreach (j from 0 to (nf - 1)) {
-        let skipped_elem = (result[i] >> (j * EEW_data_bytes * 8))[(EEW_data_bytes * 8 - 1) .. 0];
-        write_single_element(EEW_data_bytes * 8, i, vregidx_offset(vd, to_bits_unsafe(5, j * EMUL_data_reg)), skipped_elem)
-      }
+      ()
     }
   };
 
@@ -451,25 +460,20 @@ mapping clause encdec = VSUXSEGTYPE(nf, vm, vs2, rs1, width, vs3)
 val process_vsxseg : (nfields, bits(1), vregidx, word_width, word_width, int, int, regidx, vregidx, nat1, int) -> ExecutionResult
 function process_vsxseg (nf, vm, vs3, EEW_index_bytes, EEW_data_bytes, EMUL_index_pow, EMUL_data_pow, rs1, vs2, num_elem, mop) = {
   let EMUL_data_reg = if EMUL_data_pow <= 0 then 1 else 2 ^ EMUL_data_pow;
-  let vm_val = read_vmask(num_elem, vm, zvreg);
-  let vs3_seg = read_vreg_seg(num_elem, EEW_data_bytes * 8, EMUL_data_pow, nf, vs3);
-  let vs2_val = read_vreg(num_elem, EEW_index_bytes * 8, EMUL_index_pow, vs2);
-
-  let 'n = num_elem;
-  let mask : bits('n) = match init_masked_source(num_elem, EMUL_data_pow, vm_val) {
-    Ok(v)   => v,
-    Err(()) => return Illegal_Instruction()
-  };
 
   // currently mop = 1 (unordered) or 3 (ordered) do the same operations
   foreach (i from 0 to (num_elem - 1)) {
-    if mask[i] == bitone then { // active segments
+    let active : bool = match is_active_vector_element(num_elem, EMUL_data_pow, vm, i) {
+      Ok(v)   => v,
+      Err(()) => return Illegal_Instruction()
+    };
+    if active then { // active segments
       set_vstart(to_bits_unsafe(16, i));
       foreach (j from 0 to (nf - 1)) {
-        let elem_offset : int = unsigned(vs2_val[i]) + j * EEW_data_bytes;
+        let elem_offset : int = read_single_element_int(EEW_index_bytes * 8, i, vs2) + j * EEW_data_bytes;
         let vs = vregidx_offset(vs3, to_bits_unsafe(5, j * EMUL_data_reg));
-        let data = read_single_element(EEW_data_bytes * 8, i, vs);
-        match vmem_write(rs1, to_bits_unsafe(xlen, elem_offset), EEW_data_bytes, data, Write(Data), false, false, false) {
+        let data = read_single_element_int(EEW_data_bytes * 8, i, vs);
+        match vmem_write_int(rs1, elem_offset, EEW_data_bytes, data) {
           Ok(true)  => (),
           Ok(false) => internal_error(__FILE__, __LINE__, "store got false from vmem_write"),
           Err(e)    => return e,
@@ -551,8 +555,8 @@ function process_vlre (nf, vd, load_width_bytes, rs1, elem_per_reg) = {
     foreach (i from elem_to_align to (elem_per_reg - 1)) {
       set_vstart(to_bits_unsafe(16, cur_elem));
       let elem_offset = cur_elem * load_width_bytes;
-      match vmem_read(rs1, to_bits_unsafe(xlen, elem_offset), load_width_bytes, Read(Data), false, false, false) {
-        Ok(elem) => write_single_element(load_width_bytes * 8, i, vregidx_offset(vd, to_bits_unsafe(5, cur_field)), elem),
+      match vmem_read_int(rs1, elem_offset, load_width_bytes) {
+        Ok(elem) => write_single_element_from_int(load_width_bytes * 8, i, vregidx_offset(vd, to_bits_unsafe(5, cur_field)), elem),
         Err(e)   => return e,
       };
       cur_elem = cur_elem + 1
@@ -564,8 +568,8 @@ function process_vlre (nf, vd, load_width_bytes, rs1, elem_per_reg) = {
     foreach (i from 0 to (elem_per_reg - 1)) {
       set_vstart(to_bits_unsafe(16, cur_elem));
       let elem_offset = cur_elem * load_width_bytes;
-      match vmem_read(rs1, to_bits_unsafe(xlen, elem_offset), load_width_bytes, Read(Data), false, false, false) {
-        Ok(elem) => write_single_element(load_width_bytes * 8, i, vregidx_offset(vd, to_bits_unsafe(5, j)), elem),
+      match vmem_read_int(rs1, elem_offset, load_width_bytes) {
+        Ok(elem) => write_single_element_from_int(load_width_bytes * 8, i, vregidx_offset(vd, to_bits_unsafe(5, j)), elem),
         Err(e)   => return e,
       };
       cur_elem = cur_elem + 1
@@ -613,8 +617,8 @@ function process_vsre (nf, load_width_bytes, rs1, vs3, elem_per_reg) = {
       set_vstart(to_bits_unsafe(16, cur_elem));
       let elem_offset : int = cur_elem * load_width_bytes;
       let vs = vregidx_offset(vs3, to_bits_unsafe(5, cur_field));
-      let data = read_single_element(load_width_bytes * 8, i, vs);
-      match vmem_write(rs1, to_bits_unsafe(xlen, elem_offset), load_width_bytes, data, Write(Data), false, false, false) {
+      let data = read_single_element_int(load_width_bytes * 8, i, vs);
+      match vmem_write_int(rs1, elem_offset, load_width_bytes, data) {
         Ok(true)  => (),
         Ok(false) => internal_error(__FILE__, __LINE__, "store got false from vmem_write"),
         Err(e)    => return e,
@@ -625,11 +629,11 @@ function process_vsre (nf, load_width_bytes, rs1, vs3, elem_per_reg) = {
   };
 
   foreach (j from cur_field to (nf - 1)) {
-    let vs3_val = read_vreg(elem_per_reg, load_width_bytes * 8, 0, vregidx_offset(vs3, to_bits_unsafe(5, j)));
     foreach (i from 0 to (elem_per_reg - 1)) {
       set_vstart(to_bits_unsafe(16, cur_elem));
       let elem_offset = cur_elem * load_width_bytes;
-      match vmem_write(rs1, to_bits_unsafe(xlen, elem_offset), load_width_bytes, vs3_val[i], Write(Data), false, false, false) {
+      let data = read_single_element_int(load_width_bytes * 8, i, vregidx_offset(vs3, to_bits_unsafe(5, j)));
+      match vmem_write_int(rs1, elem_offset, load_width_bytes, data) {
         Ok(true)  => (),
         Ok(false) => internal_error(__FILE__, __LINE__, "store got false from vmem_write"),
         Err(e)    => return e,

@@ -37,31 +37,59 @@ function clause execute(RIVVTYPE(funct6, vm, vs2, vs1, vd)) = {
 
   if unsigned(vl) == 0 then return RETIRE_SUCCESS; // if vl=0, no operation is performed
 
-  let 'n = num_elem_vs;
-  let 'd = num_elem_vd;
-  let 'm = SEW;
-  let 'o = SEW_widen;
-
-  let vm_val  : bits('n)     = read_vmask(num_elem_vs, vm, zvreg);
-  let vd_val  : vector('d, bits('o)) = read_vreg(num_elem_vd, SEW_widen, 0, vd);
-  let vs2_val : vector('n, bits('m)) = read_vreg(num_elem_vs, SEW, LMUL_pow, vs2);
-  let mask    : bits('n)     = match init_masked_source(num_elem_vs, LMUL_pow, vm_val) {
-    Ok(v)   => v,
-    Err(()) => return Illegal_Instruction()
-  };
-
-  var sum : bits('o) = read_single_element(SEW_widen, 0, vs1); // vs1 regardless of LMUL setting
-  foreach (i from 0 to (num_elem_vs - 1)) {
-    if mask[i] == bitone then {
-      let elem : bits('o) = match funct6 {
-        IVV_VWREDSUMU  => to_bits_unsafe(SEW_widen, unsigned(vs2_val[i])),
-        IVV_VWREDSUM   => to_bits_unsafe(SEW_widen, signed(vs2_val[i]))
+  if SEW == 8 then {
+    var sum : bits(16) = read_single_element(16, 0, vs1); // vs1 regardless of LMUL setting
+    foreach (i from 0 to (num_elem_vs - 1)) {
+      let active : bool = match is_active_vector_element(num_elem_vs, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
       };
-      sum = sum + elem
-    }
+      if active then {
+        let vs2_val : bits(8) = read_single_element(8, i, vs2);
+        let elem : bits(16) = match funct6 {
+          IVV_VWREDSUMU  => to_bits_unsafe(16, unsigned(vs2_val)),
+          IVV_VWREDSUM   => to_bits_unsafe(16, signed(vs2_val))
+        };
+        sum = sum + elem
+      }
+    };
+    write_single_element(16, 0, vd, sum)
+  } else if SEW == 16 then {
+    var sum : bits(32) = read_single_element(32, 0, vs1); // vs1 regardless of LMUL setting
+    foreach (i from 0 to (num_elem_vs - 1)) {
+      let active : bool = match is_active_vector_element(num_elem_vs, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(16) = read_single_element(16, i, vs2);
+        let elem : bits(32) = match funct6 {
+          IVV_VWREDSUMU  => to_bits_unsafe(32, unsigned(vs2_val)),
+          IVV_VWREDSUM   => to_bits_unsafe(32, signed(vs2_val))
+        };
+        sum = sum + elem
+      }
+    };
+    write_single_element(32, 0, vd, sum)
+  } else {
+    var sum : bits(64) = read_single_element(64, 0, vs1); // vs1 regardless of LMUL setting
+    foreach (i from 0 to (num_elem_vs - 1)) {
+      let active : bool = match is_active_vector_element(num_elem_vs, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(32) = read_single_element(32, i, vs2);
+        let elem : bits(64) = match funct6 {
+          IVV_VWREDSUMU  => to_bits_unsafe(64, unsigned(vs2_val)),
+          IVV_VWREDSUM   => to_bits_unsafe(64, signed(vs2_val))
+        };
+        sum = sum + elem
+      }
+    };
+    write_single_element(64, 0, vd, sum)
   };
 
-  write_single_element(SEW_widen, 0, vd, sum);
   // other elements in vd are treated as tail elements, currently remain unchanged
   // TODO: configuration support for agnostic behavior
   set_vstart(zeros());
@@ -104,35 +132,96 @@ function clause execute(RMVVTYPE(funct6, vm, vs2, vs1, vd)) = {
 
   if unsigned(vl) == 0 then return RETIRE_SUCCESS; // if vl=0, no operation is performed
 
-  let 'n = num_elem_vs;
-  let 'd = num_elem_vd;
-  let 'm = SEW;
-
-  let vm_val  : bits('n)     = read_vmask(num_elem_vs, vm, zvreg);
-  let vd_val  : vector('d, bits('m)) = read_vreg(num_elem_vd, SEW, 0, vd);
-  let vs2_val : vector('n, bits('m)) = read_vreg(num_elem_vs, SEW, LMUL_pow, vs2);
-  let mask    : bits('n)     = match init_masked_source(num_elem_vs, LMUL_pow, vm_val) {
-    Ok(v)   => v,
-    Err(()) => return Illegal_Instruction()
-  };
-
-  var sum : bits('m) = read_single_element(SEW, 0, vs1); // vs1 regardless of LMUL setting
-  foreach (i from 0 to (num_elem_vs - 1)) {
-    if mask[i] == bitone then {
-      sum = match funct6 {
-        MVV_VREDSUM   => sum + vs2_val[i],
-        MVV_VREDAND   => sum & vs2_val[i],
-        MVV_VREDOR    => sum | vs2_val[i],
-        MVV_VREDXOR   => sum ^ vs2_val[i],
-        MVV_VREDMIN   => to_bits_unsafe(SEW, min(signed(vs2_val[i]), signed(sum))),
-        MVV_VREDMINU  => to_bits_unsafe(SEW, min(unsigned(vs2_val[i]), unsigned(sum))),
-        MVV_VREDMAX   => to_bits_unsafe(SEW, max(signed(vs2_val[i]), signed(sum))),
-        MVV_VREDMAXU  => to_bits_unsafe(SEW, max(unsigned(vs2_val[i]), unsigned(sum)))
+  if SEW == 8 then {
+    var sum : bits(8) = read_single_element(8, 0, vs1); // vs1 regardless of LMUL setting
+    foreach (i from 0 to (num_elem_vs - 1)) {
+      let active : bool = match is_active_vector_element(num_elem_vs, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(8) = read_single_element(8, i, vs2);
+        sum = match funct6 {
+          MVV_VREDSUM   => sum + vs2_val,
+          MVV_VREDAND   => sum & vs2_val,
+          MVV_VREDOR    => sum | vs2_val,
+          MVV_VREDXOR   => sum ^ vs2_val,
+          MVV_VREDMIN   => to_bits_unsafe(8, min(signed(vs2_val), signed(sum))),
+          MVV_VREDMINU  => to_bits_unsafe(8, min(unsigned(vs2_val), unsigned(sum))),
+          MVV_VREDMAX   => to_bits_unsafe(8, max(signed(vs2_val), signed(sum))),
+          MVV_VREDMAXU  => to_bits_unsafe(8, max(unsigned(vs2_val), unsigned(sum)))
+        }
       }
-    }
+    };
+    write_single_element(8, 0, vd, sum)
+  } else if SEW == 16 then {
+    var sum : bits(16) = read_single_element(16, 0, vs1); // vs1 regardless of LMUL setting
+    foreach (i from 0 to (num_elem_vs - 1)) {
+      let active : bool = match is_active_vector_element(num_elem_vs, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(16) = read_single_element(16, i, vs2);
+        sum = match funct6 {
+          MVV_VREDSUM   => sum + vs2_val,
+          MVV_VREDAND   => sum & vs2_val,
+          MVV_VREDOR    => sum | vs2_val,
+          MVV_VREDXOR   => sum ^ vs2_val,
+          MVV_VREDMIN   => to_bits_unsafe(16, min(signed(vs2_val), signed(sum))),
+          MVV_VREDMINU  => to_bits_unsafe(16, min(unsigned(vs2_val), unsigned(sum))),
+          MVV_VREDMAX   => to_bits_unsafe(16, max(signed(vs2_val), signed(sum))),
+          MVV_VREDMAXU  => to_bits_unsafe(16, max(unsigned(vs2_val), unsigned(sum)))
+        }
+      }
+    };
+    write_single_element(16, 0, vd, sum)
+  } else if SEW == 32 then {
+    var sum : bits(32) = read_single_element(32, 0, vs1); // vs1 regardless of LMUL setting
+    foreach (i from 0 to (num_elem_vs - 1)) {
+      let active : bool = match is_active_vector_element(num_elem_vs, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(32) = read_single_element(32, i, vs2);
+        sum = match funct6 {
+          MVV_VREDSUM   => sum + vs2_val,
+          MVV_VREDAND   => sum & vs2_val,
+          MVV_VREDOR    => sum | vs2_val,
+          MVV_VREDXOR   => sum ^ vs2_val,
+          MVV_VREDMIN   => to_bits_unsafe(32, min(signed(vs2_val), signed(sum))),
+          MVV_VREDMINU  => to_bits_unsafe(32, min(unsigned(vs2_val), unsigned(sum))),
+          MVV_VREDMAX   => to_bits_unsafe(32, max(signed(vs2_val), signed(sum))),
+          MVV_VREDMAXU  => to_bits_unsafe(32, max(unsigned(vs2_val), unsigned(sum)))
+        }
+      }
+    };
+    write_single_element(32, 0, vd, sum)
+  } else {
+    var sum : bits(64) = read_single_element(64, 0, vs1); // vs1 regardless of LMUL setting
+    foreach (i from 0 to (num_elem_vs - 1)) {
+      let active : bool = match is_active_vector_element(num_elem_vs, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(64) = read_single_element(64, i, vs2);
+        sum = match funct6 {
+          MVV_VREDSUM   => sum + vs2_val,
+          MVV_VREDAND   => sum & vs2_val,
+          MVV_VREDOR    => sum | vs2_val,
+          MVV_VREDXOR   => sum ^ vs2_val,
+          MVV_VREDMIN   => to_bits_unsafe(64, min(signed(vs2_val), signed(sum))),
+          MVV_VREDMINU  => to_bits_unsafe(64, min(unsigned(vs2_val), unsigned(sum))),
+          MVV_VREDMAX   => to_bits_unsafe(64, max(signed(vs2_val), signed(sum))),
+          MVV_VREDMAXU  => to_bits_unsafe(64, max(unsigned(vs2_val), unsigned(sum)))
+        }
+      }
+    };
+    write_single_element(64, 0, vd, sum)
   };
 
-  write_single_element(SEW, 0, vd, sum);
   // other elements in vd are treated as tail elements, currently remain unchanged
   // TODO: configuration support for agnostic behavior
   set_vstart(zeros());

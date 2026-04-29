@@ -19,47 +19,71 @@ mapping clause assembly = VSHA2MS_VV(vs2, vs1, vd)
   <-> "vsha2ms.vv" ^ spc() ^ vreg_name(vd) ^ sep() ^ vreg_name(vs2) ^ sep() ^ vreg_name(vs1)
 
 function clause execute (VSHA2MS_VV(vs2, vs1, vd)) = {
-  let 'SEW     = get_sew();
+  let SEW      = get_sew();
   let LMUL_pow = get_lmul_pow();
   let num_elem = get_num_elem(LMUL_pow, SEW);
 
   assert(SEW == 32 | SEW == 64);
 
-  let vs2_val = read_vreg(num_elem, SEW, LMUL_pow, vs2);
-  let vs1_val = read_vreg(num_elem, SEW, LMUL_pow, vs1);
-  let vd_val  = read_vreg(num_elem, SEW, LMUL_pow, vd);
-
-  var w : vector(20, bits('SEW)) = vector_init(zeros());
-
   let eg_len   = (unsigned(vl) / 4);
   let eg_start = (unsigned(vstart) / 4);
 
-  foreach (i from eg_start to (eg_len - 1)) {
-    assert(i * 4 + 3 < num_elem);
+  if SEW == 32 then {
+    foreach (i from eg_start to (eg_len - 1)) {
+      assert(i * 4 + 3 < num_elem);
 
-    w = [w with
-      0  = vd_val[i*4],
-      1  = vd_val[i*4+1],
-      2  = vd_val[i*4+2],
-      3  = vd_val[i*4+3],
+      let w0  : bits(32) = read_single_element(32, i * 4 + 0, vd);
+      let w1  : bits(32) = read_single_element(32, i * 4 + 1, vd);
+      let w2  : bits(32) = read_single_element(32, i * 4 + 2, vd);
+      let w3  : bits(32) = read_single_element(32, i * 4 + 3, vd);
 
-      4  = vs2_val[i*4],
-      9  = vs2_val[i*4+1],
-      10 = vs2_val[i*4+2],
-      11 = vs2_val[i*4+3],
+      let w4  : bits(32) = read_single_element(32, i * 4 + 0, vs2);
+      let w9  : bits(32) = read_single_element(32, i * 4 + 1, vs2);
+      let w10 : bits(32) = read_single_element(32, i * 4 + 2, vs2);
+      let w11 : bits(32) = read_single_element(32, i * 4 + 3, vs2);
 
-      12 = vs1_val[i*4],
-      13 = vs1_val[i*4+1],
-      14 = vs1_val[i*4+2],
-      15 = vs1_val[i*4+3]
-    ];
+      let w12 : bits(32) = read_single_element(32, i * 4 + 0, vs1);
+      let w14 : bits(32) = read_single_element(32, i * 4 + 2, vs1);
+      let w15 : bits(32) = read_single_element(32, i * 4 + 3, vs1);
 
-    w[16] = zvk_sig1(w[14], SEW) + w[9]  + zvk_sig0(w[1], SEW) + w[0];
-    w[17] = zvk_sig1(w[15], SEW) + w[10] + zvk_sig0(w[2], SEW) + w[1];
-    w[18] = zvk_sig1(w[16], SEW) + w[11] + zvk_sig0(w[3], SEW) + w[2];
-    w[19] = zvk_sig1(w[17], SEW) + w[12] + zvk_sig0(w[4], SEW) + w[3];
+      let w16 : bits(32) = zvk_sig1(w14, 32) + w9  + zvk_sig0(w1, 32) + w0;
+      let w17 : bits(32) = zvk_sig1(w15, 32) + w10 + zvk_sig0(w2, 32) + w1;
+      let w18 : bits(32) = zvk_sig1(w16, 32) + w11 + zvk_sig0(w3, 32) + w2;
+      let w19 : bits(32) = zvk_sig1(w17, 32) + w12 + zvk_sig0(w4, 32) + w3;
 
-    write_velem_quad(vd, SEW, w[19] @ w[18] @ w[17] @ w[16], i);
+      write_single_element(32, i * 4 + 0, vd, w16);
+      write_single_element(32, i * 4 + 1, vd, w17);
+      write_single_element(32, i * 4 + 2, vd, w18);
+      write_single_element(32, i * 4 + 3, vd, w19);
+    }
+  } else {
+    foreach (i from eg_start to (eg_len - 1)) {
+      assert(i * 4 + 3 < num_elem);
+
+      let w0  : bits(64) = read_single_element(64, i * 4 + 0, vd);
+      let w1  : bits(64) = read_single_element(64, i * 4 + 1, vd);
+      let w2  : bits(64) = read_single_element(64, i * 4 + 2, vd);
+      let w3  : bits(64) = read_single_element(64, i * 4 + 3, vd);
+
+      let w4  : bits(64) = read_single_element(64, i * 4 + 0, vs2);
+      let w9  : bits(64) = read_single_element(64, i * 4 + 1, vs2);
+      let w10 : bits(64) = read_single_element(64, i * 4 + 2, vs2);
+      let w11 : bits(64) = read_single_element(64, i * 4 + 3, vs2);
+
+      let w12 : bits(64) = read_single_element(64, i * 4 + 0, vs1);
+      let w14 : bits(64) = read_single_element(64, i * 4 + 2, vs1);
+      let w15 : bits(64) = read_single_element(64, i * 4 + 3, vs1);
+
+      let w16 : bits(64) = zvk_sig1(w14, 64) + w9  + zvk_sig0(w1, 64) + w0;
+      let w17 : bits(64) = zvk_sig1(w15, 64) + w10 + zvk_sig0(w2, 64) + w1;
+      let w18 : bits(64) = zvk_sig1(w16, 64) + w11 + zvk_sig0(w3, 64) + w2;
+      let w19 : bits(64) = zvk_sig1(w17, 64) + w12 + zvk_sig0(w4, 64) + w3;
+
+      write_single_element(64, i * 4 + 0, vd, w16);
+      write_single_element(64, i * 4 + 1, vd, w17);
+      write_single_element(64, i * 4 + 2, vd, w18);
+      write_single_element(64, i * 4 + 3, vd, w19);
+    }
   };
 
   set_vstart(zeros());
@@ -92,60 +116,107 @@ function clause execute (ZVKSHA2TYPE(funct6, vs2, vs1, vd)) = {
 
   assert(SEW == 32 | SEW == 64);
 
-  let vs2_val = read_vreg(num_elem, SEW, LMUL_pow, vs2);
-  let vs1_val = read_vreg(num_elem, SEW, LMUL_pow, vs1);
-  let vd_val  = read_vreg(num_elem, SEW, LMUL_pow, vd);
-
   let eg_len   = (unsigned(vl) / 4);
   let eg_start = (unsigned(vstart) / 4);
 
-  foreach (i from eg_start to (eg_len - 1)) {
-    assert(i * 4 + 3 < num_elem);
+  if SEW == 32 then {
+    foreach (i from eg_start to (eg_len - 1)) {
+      assert(i * 4 + 3 < num_elem);
 
-    var f = vs2_val[i*4+0];
-    var e = vs2_val[i*4+1];
-    var b = vs2_val[i*4+2];
-    var a = vs2_val[i*4+3];
+      var f : bits(32) = read_single_element(32, i * 4 + 0, vs2);
+      var e : bits(32) = read_single_element(32, i * 4 + 1, vs2);
+      var b : bits(32) = read_single_element(32, i * 4 + 2, vs2);
+      var a : bits(32) = read_single_element(32, i * 4 + 3, vs2);
 
-    var h = vd_val[i*4+0];
-    var g = vd_val[i*4+1];
-    var d = vd_val[i*4+2];
-    var c = vd_val[i*4+3];
+      var h : bits(32) = read_single_element(32, i * 4 + 0, vd);
+      var g : bits(32) = read_single_element(32, i * 4 + 1, vd);
+      var d : bits(32) = read_single_element(32, i * 4 + 2, vd);
+      var c : bits(32) = read_single_element(32, i * 4 + 3, vd);
 
-    let message_sched_plus_c = get_velem_quad(vs1_val, i);
+      let w0 : bits(32) = if funct6 == ZVK_VSHA2CL_VV
+                          then read_single_element(32, i * 4 + 0, vs1)
+                          else read_single_element(32, i * 4 + 2, vs1);
+      let w1 : bits(32) = if funct6 == ZVK_VSHA2CL_VV
+                          then read_single_element(32, i * 4 + 1, vs1)
+                          else read_single_element(32, i * 4 + 3, vs1);
 
-    let w0 = if funct6 == ZVK_VSHA2CL_VV
-             then message_sched_plus_c[(SEW * 1) - 1 .. 0]
-             else message_sched_plus_c[(SEW * 3) - 1 .. (SEW * 2)];
+      var T1 : bits(32) = h + zvk_sum1(e, 32) + zvk_ch(e, f, g) + w0;
+      var T2 : bits(32) = zvk_sum0(a, 32) + zvk_maj(a, b, c);
 
-    let w1 = if funct6 == ZVK_VSHA2CL_VV
-             then message_sched_plus_c[(SEW * 2) - 1 .. SEW]
-             else message_sched_plus_c[(SEW * 4) - 1 .. (SEW * 3)];
+      h  = g;
+      g  = f;
+      f  = e;
+      e  = d + T1;
+      d  = c;
+      c  = b;
+      b  = a;
+      a  = T1 + T2;
 
-    var T1 = h + zvk_sum1(e, SEW) + zvk_ch(e,f,g) + w0;
-    var T2 = zvk_sum0(a, SEW) + zvk_maj(a, b, c);
+      T1 = h + zvk_sum1(e, 32) + zvk_ch(e, f, g) + w1;
+      T2 = zvk_sum0(a, 32) + zvk_maj(a, b, c);
+      h  = g;
+      g  = f;
+      f  = e;
+      e  = d + T1;
+      d  = c;
+      c  = b;
+      b  = a;
+      a  = T1 + T2;
 
-    h  = g;
-    g  = f;
-    f  = e;
-    e  = d + T1;
-    d  = c;
-    c  = b;
-    b  = a;
-    a  = T1 + T2;
+      write_single_element(32, i * 4 + 0, vd, f);
+      write_single_element(32, i * 4 + 1, vd, e);
+      write_single_element(32, i * 4 + 2, vd, b);
+      write_single_element(32, i * 4 + 3, vd, a);
+    }
+  } else {
+    foreach (i from eg_start to (eg_len - 1)) {
+      assert(i * 4 + 3 < num_elem);
 
-    T1 = h + zvk_sum1(e, SEW) + zvk_ch(e, f, g) + w1;
-    T2 = zvk_sum0(a, SEW) + zvk_maj(a, b, c);
-    h  = g;
-    g  = f;
-    f  = e;
-    e  = d + T1;
-    d  = c;
-    c  = b;
-    b  = a;
-    a  = T1 + T2;
+      var f : bits(64) = read_single_element(64, i * 4 + 0, vs2);
+      var e : bits(64) = read_single_element(64, i * 4 + 1, vs2);
+      var b : bits(64) = read_single_element(64, i * 4 + 2, vs2);
+      var a : bits(64) = read_single_element(64, i * 4 + 3, vs2);
 
-    write_velem_quad(vd, SEW, a @ b @ e @ f, i);
+      var h : bits(64) = read_single_element(64, i * 4 + 0, vd);
+      var g : bits(64) = read_single_element(64, i * 4 + 1, vd);
+      var d : bits(64) = read_single_element(64, i * 4 + 2, vd);
+      var c : bits(64) = read_single_element(64, i * 4 + 3, vd);
+
+      let w0 : bits(64) = if funct6 == ZVK_VSHA2CL_VV
+                          then read_single_element(64, i * 4 + 0, vs1)
+                          else read_single_element(64, i * 4 + 2, vs1);
+      let w1 : bits(64) = if funct6 == ZVK_VSHA2CL_VV
+                          then read_single_element(64, i * 4 + 1, vs1)
+                          else read_single_element(64, i * 4 + 3, vs1);
+
+      var T1 : bits(64) = h + zvk_sum1(e, 64) + zvk_ch(e, f, g) + w0;
+      var T2 : bits(64) = zvk_sum0(a, 64) + zvk_maj(a, b, c);
+
+      h  = g;
+      g  = f;
+      f  = e;
+      e  = d + T1;
+      d  = c;
+      c  = b;
+      b  = a;
+      a  = T1 + T2;
+
+      T1 = h + zvk_sum1(e, 64) + zvk_ch(e, f, g) + w1;
+      T2 = zvk_sum0(a, 64) + zvk_maj(a, b, c);
+      h  = g;
+      g  = f;
+      f  = e;
+      e  = d + T1;
+      d  = c;
+      c  = b;
+      b  = a;
+      a  = T1 + T2;
+
+      write_single_element(64, i * 4 + 0, vd, f);
+      write_single_element(64, i * 4 + 1, vd, e);
+      write_single_element(64, i * 4 + 2, vd, b);
+      write_single_element(64, i * 4 + 3, vd, a);
+    }
   };
 
   set_vstart(zeros());

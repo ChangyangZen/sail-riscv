@@ -46,8 +46,8 @@ let sys_misaligned_allowed_within_exp : range(0, 11) = config memory.misaligned.
 val access_within : forall 'width 'n ('r : Nat), 'r <= 'width & 1 <= 'n <= 2^'r.
   (bits('width), int('n), int('r)) -> bool
 function access_within(addr, bytes, region_width_exp) = {
-  let mask : bits('width) = ~(zero_extend(ones(region_width_exp)));
-  (addr & mask) == ((addr + (bytes - 1)) & mask)
+  let region_bytes = 2 ^ region_width_exp;
+  unsigned(addr) / region_bytes == (unsigned(addr) + (bytes - 1)) / region_bytes
 }
 
 // This property demonstrates that when bytes == 2^region_width_exp, the access_within check above is
@@ -138,8 +138,21 @@ function vmem_write_addr(vaddr, width, data, acc, aq, rl, res) = {
           Err(e) => return Err(Memory_Exception(Virtaddr(vaddr), e)),
 
           Ok(()) => {
-            let write_value = data[(8 * (offset + 1) * bytes) - 1 .. 8 * offset * bytes];
-            match mem_write_value(paddr, bytes, write_value, aq, rl, res) {
+            let write_result =
+              if bytes == 1 then {
+                let write_value : bits(8) = data[(8 * (offset + 1)) - 1 .. 8 * offset];
+                mem_write_value(paddr, 1, write_value, aq, rl, res)
+              } else if bytes == 2 then {
+                let write_value : bits(16) = data[(16 * (offset + 1)) - 1 .. 16 * offset];
+                mem_write_value(paddr, 2, write_value, aq, rl, res)
+              } else if bytes == 4 then {
+                let write_value : bits(32) = data[(32 * (offset + 1)) - 1 .. 32 * offset];
+                mem_write_value(paddr, 4, write_value, aq, rl, res)
+              } else {
+                let write_value : bits(64) = data[(64 * (offset + 1)) - 1 .. 64 * offset];
+                mem_write_value(paddr, 8, write_value, aq, rl, res)
+              };
+            match write_result {
               Err(e) => return Err(Memory_Exception(Virtaddr(vaddr), e)),
               Ok(s)  => write_success = write_success & s,
             }
@@ -195,7 +208,7 @@ function vmem_read(rs, offset, width, acc, aq, rl, res) = {
   // (single-copy-atomic) memory operations, each of `bytes` width. If the load is
   // aligned, then `n` = 1 and bytes will remain unchanged.
   let ('n, 'bytes) = split_misaligned(vaddr, width);
-  var data = zeros(8 * n * bytes);
+  var data_int : int = 0;
 
   let (first, last, step) = misaligned_order(n);
   var i : range(0, 'n - 1) = first;
@@ -208,16 +221,40 @@ function vmem_read(rs, offset, width, acc, aq, rl, res) = {
     match translateAddr(Virtaddr(vaddr), acc) {
       Err(e, _) => return Err(Memory_Exception(Virtaddr(vaddr), e)),
 
-      Ok(paddr, _) => match mem_read(acc, paddr, bytes, aq, rl, res) {
-        Err(e) => return Err(Memory_Exception(Virtaddr(vaddr), e)),
-
-        Ok(v) => {
-          if res then {
-            load_reservation(bits_of(paddr))
-          };
-
-          data[(8 * (offset + 1) * bytes) - 1 .. 8 * offset * bytes] = v
-        },
+      Ok(paddr, _) => {
+        if bytes == 1 then {
+          match mem_read(acc, paddr, 1, aq, rl, res) {
+            Err(e) => return Err(Memory_Exception(Virtaddr(vaddr), e)),
+            Ok(v) => {
+              if res then { load_reservation(bits_of(paddr)) };
+              data_int = data_int + unsigned(v) * (2 ^ (8 * offset))
+            },
+          }
+        } else if bytes == 2 then {
+          match mem_read(acc, paddr, 2, aq, rl, res) {
+            Err(e) => return Err(Memory_Exception(Virtaddr(vaddr), e)),
+            Ok(v) => {
+              if res then { load_reservation(bits_of(paddr)) };
+              data_int = data_int + unsigned(v) * (2 ^ (16 * offset))
+            },
+          }
+        } else if bytes == 4 then {
+          match mem_read(acc, paddr, 4, aq, rl, res) {
+            Err(e) => return Err(Memory_Exception(Virtaddr(vaddr), e)),
+            Ok(v) => {
+              if res then { load_reservation(bits_of(paddr)) };
+              data_int = data_int + unsigned(v) * (2 ^ (32 * offset))
+            },
+          }
+        } else {
+          match mem_read(acc, paddr, 8, aq, rl, res) {
+            Err(e) => return Err(Memory_Exception(Virtaddr(vaddr), e)),
+            Ok(v) => {
+              if res then { load_reservation(bits_of(paddr)) };
+              data_int = data_int + unsigned(v) * (2 ^ (64 * offset))
+            },
+          }
+        }
       }
     };
 
@@ -228,7 +265,7 @@ function vmem_read(rs, offset, width, acc, aq, rl, res) = {
     }
   } until finished;
 
-  Ok(data)
+  Ok(to_bits_truncate(8 * width, data_int))
 }
 
 val vmem_write : forall 'width, is_mem_width('width).

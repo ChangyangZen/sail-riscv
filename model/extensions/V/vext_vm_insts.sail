@@ -33,31 +33,77 @@ function clause execute(VVMTYPE(funct6, vs2, vs1, vd)) = {
 
   if illegal_vd_unmasked() then return Illegal_Instruction();
 
-  let 'n = num_elem;
-  let 'm = SEW;
+  assert(num_elem <= vlen);
 
-  let vm_val  : bits('n)     = read_vmask_carry(num_elem, 0b0, zvreg);
-  let vs1_val : vector('n, bits('m)) = read_vreg(num_elem, SEW, LMUL_pow, vs1);
-  let vs2_val : vector('n, bits('m)) = read_vreg(num_elem, SEW, LMUL_pow, vs2);
-  let vd_val  : bits('n)     = read_vmask(num_elem, 0b0, vd);
-
-  let (initial_result, mask) : (bits('n), bits('n)) = match init_masked_result_carry(num_elem, SEW, LMUL_pow, vd_val) {
-    Ok(v)   => v,
-    Err(()) => return Illegal_Instruction()
-  };
-  var result = initial_result;
-
-  foreach (i from 0 to (num_elem - 1)) {
-    if mask[i] == bitone then {
-      let res : bool = match funct6 {
-        VVM_VMADC    => unsigned(vs2_val[i]) + unsigned(vs1_val[i]) + (if vm_val[i] == bitone then 1 else 0) > 2 ^ SEW - 1,
-        VVM_VMSBC    => unsigned(vs2_val[i]) - unsigned(vs1_val[i]) - (if vm_val[i] == bitone then 1 else 0) < 0
+  if SEW == 8 then {
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_body_vector_element(num_elem, LMUL_pow, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
       };
-      result[i] = bool_to_bit(res)
+      if active then {
+        let vs1_val : bits(8) = read_single_element(8, i, vs1);
+        let vs2_val : bits(8) = read_single_element(8, i, vs2);
+        let carry = if V(zvreg)[i] == bitone then 1 else 0;
+        let res : bool = match funct6 {
+          VVM_VMADC => unsigned(vs2_val) + unsigned(vs1_val) + carry > 2 ^ 8 - 1,
+          VVM_VMSBC => unsigned(vs2_val) - unsigned(vs1_val) - carry < 0
+        };
+        V(vd) = [V(vd) with i = bool_to_bit(res)]
+      }
+    }
+  } else if SEW == 16 then {
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_body_vector_element(num_elem, LMUL_pow, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs1_val : bits(16) = read_single_element(16, i, vs1);
+        let vs2_val : bits(16) = read_single_element(16, i, vs2);
+        let carry = if V(zvreg)[i] == bitone then 1 else 0;
+        let res : bool = match funct6 {
+          VVM_VMADC => unsigned(vs2_val) + unsigned(vs1_val) + carry > 2 ^ 16 - 1,
+          VVM_VMSBC => unsigned(vs2_val) - unsigned(vs1_val) - carry < 0
+        };
+        V(vd) = [V(vd) with i = bool_to_bit(res)]
+      }
+    }
+  } else if SEW == 32 then {
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_body_vector_element(num_elem, LMUL_pow, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs1_val : bits(32) = read_single_element(32, i, vs1);
+        let vs2_val : bits(32) = read_single_element(32, i, vs2);
+        let carry = if V(zvreg)[i] == bitone then 1 else 0;
+        let res : bool = match funct6 {
+          VVM_VMADC => unsigned(vs2_val) + unsigned(vs1_val) + carry > 2 ^ 32 - 1,
+          VVM_VMSBC => unsigned(vs2_val) - unsigned(vs1_val) - carry < 0
+        };
+        V(vd) = [V(vd) with i = bool_to_bit(res)]
+      }
+    }
+  } else {
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_body_vector_element(num_elem, LMUL_pow, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs1_val : bits(64) = read_single_element(64, i, vs1);
+        let vs2_val : bits(64) = read_single_element(64, i, vs2);
+        let carry = if V(zvreg)[i] == bitone then 1 else 0;
+        let res : bool = match funct6 {
+          VVM_VMADC => unsigned(vs2_val) + unsigned(vs1_val) + carry > 2 ^ 64 - 1,
+          VVM_VMSBC => unsigned(vs2_val) - unsigned(vs1_val) - carry < 0
+        };
+        V(vd) = [V(vd) with i = bool_to_bit(res)]
+      }
     }
   };
-
-  write_vmask(num_elem, vd, result);
   set_vstart(zeros());
   RETIRE_SUCCESS
 }
@@ -92,30 +138,73 @@ function clause execute(VVMCTYPE(funct6, vs2, vs1, vd)) = {
 
   if illegal_vd_unmasked() then return Illegal_Instruction();
 
-  let 'n = num_elem;
-  let 'm = SEW;
+  assert(num_elem <= vlen);
 
-  let vs1_val : vector('n, bits('m)) = read_vreg(num_elem, SEW, LMUL_pow, vs1);
-  let vs2_val : vector('n, bits('m)) = read_vreg(num_elem, SEW, LMUL_pow, vs2);
-  let vd_val  : bits('n)     = read_vmask(num_elem, 0b0, vd);
-
-  let (initial_result, mask) : (bits('n), bits('n)) = match init_masked_result_carry(num_elem, SEW, LMUL_pow, vd_val) {
-    Ok(v)   => v,
-    Err(()) => return Illegal_Instruction()
-  };
-  var result = initial_result;
-
-  foreach (i from 0 to (num_elem - 1)) {
-    if mask[i] == bitone then {
-      let res : bool = match funct6 {
-        VVMC_VMADC    => unsigned(vs2_val[i]) + unsigned(vs1_val[i]) > 2 ^ SEW - 1,
-        VVMC_VMSBC    => unsigned(vs2_val[i]) - unsigned(vs1_val[i]) < 0
+  if SEW == 8 then {
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_body_vector_element(num_elem, LMUL_pow, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
       };
-      result[i] = bool_to_bit(res)
+      if active then {
+        let vs1_val : bits(8) = read_single_element(8, i, vs1);
+        let vs2_val : bits(8) = read_single_element(8, i, vs2);
+        let res : bool = match funct6 {
+          VVMC_VMADC => unsigned(vs2_val) + unsigned(vs1_val) > 2 ^ 8 - 1,
+          VVMC_VMSBC => unsigned(vs2_val) - unsigned(vs1_val) < 0
+        };
+        V(vd) = [V(vd) with i = bool_to_bit(res)]
+      }
+    }
+  } else if SEW == 16 then {
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_body_vector_element(num_elem, LMUL_pow, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs1_val : bits(16) = read_single_element(16, i, vs1);
+        let vs2_val : bits(16) = read_single_element(16, i, vs2);
+        let res : bool = match funct6 {
+          VVMC_VMADC => unsigned(vs2_val) + unsigned(vs1_val) > 2 ^ 16 - 1,
+          VVMC_VMSBC => unsigned(vs2_val) - unsigned(vs1_val) < 0
+        };
+        V(vd) = [V(vd) with i = bool_to_bit(res)]
+      }
+    }
+  } else if SEW == 32 then {
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_body_vector_element(num_elem, LMUL_pow, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs1_val : bits(32) = read_single_element(32, i, vs1);
+        let vs2_val : bits(32) = read_single_element(32, i, vs2);
+        let res : bool = match funct6 {
+          VVMC_VMADC => unsigned(vs2_val) + unsigned(vs1_val) > 2 ^ 32 - 1,
+          VVMC_VMSBC => unsigned(vs2_val) - unsigned(vs1_val) < 0
+        };
+        V(vd) = [V(vd) with i = bool_to_bit(res)]
+      }
+    }
+  } else {
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_body_vector_element(num_elem, LMUL_pow, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs1_val : bits(64) = read_single_element(64, i, vs1);
+        let vs2_val : bits(64) = read_single_element(64, i, vs2);
+        let res : bool = match funct6 {
+          VVMC_VMADC => unsigned(vs2_val) + unsigned(vs1_val) > 2 ^ 64 - 1,
+          VVMC_VMSBC => unsigned(vs2_val) - unsigned(vs1_val) < 0
+        };
+        V(vd) = [V(vd) with i = bool_to_bit(res)]
+      }
     }
   };
-
-  write_vmask(num_elem, vd, result);
   set_vstart(zeros());
   RETIRE_SUCCESS
 }
@@ -150,33 +239,77 @@ function clause execute(VVMSTYPE(funct6, vs2, vs1, vd)) = {
 
   if illegal_vd_masked(vd) then return Illegal_Instruction();
 
-  let 'n = num_elem;
-  let 'm = SEW;
+  assert(num_elem <= vlen);
 
-  // for bypassing normal masking in init_masked_result
-  let vec_trues : bits('n) = ones();
-
-  let vm_val  : bits('n)     = read_vmask_carry(num_elem, 0b0, zvreg);
-  let vs1_val : vector('n, bits('m)) = read_vreg(num_elem, SEW, LMUL_pow, vs1);
-  let vs2_val : vector('n, bits('m)) = read_vreg(num_elem, SEW, LMUL_pow, vs2);
-  let vd_val  : vector('n, bits('m)) = read_vreg(num_elem, SEW, LMUL_pow, vd);
-
-  let (initial_result, mask) : (vector('n, bits('m)), bits('n)) = match init_masked_result(num_elem, SEW, LMUL_pow, vd_val, vec_trues) {
-    Ok(v)   => v,
-    Err(()) => return Illegal_Instruction()
-  };
-  var result = initial_result;
-
-  foreach (i from 0 to (num_elem - 1)) {
-    if mask[i] == bitone then {
-      result[i] = match funct6 {
-        VVMS_VADC     => to_bits_unsafe(SEW, unsigned(vs2_val[i]) + unsigned(vs1_val[i]) + (if vm_val[i] == bitone then 1 else 0)),
-        VVMS_VSBC     => to_bits_unsafe(SEW, unsigned(vs2_val[i]) - unsigned(vs1_val[i]) - (if vm_val[i] == bitone then 1 else 0))
+  if SEW == 8 then {
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_body_vector_element(num_elem, LMUL_pow, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs1_val : bits(8) = read_single_element(8, i, vs1);
+        let vs2_val : bits(8) = read_single_element(8, i, vs2);
+        let carry = if V(zvreg)[i] == bitone then 1 else 0;
+        let result : bits(8) = match funct6 {
+          VVMS_VADC => to_bits_unsafe(8, unsigned(vs2_val) + unsigned(vs1_val) + carry),
+          VVMS_VSBC => to_bits_unsafe(8, unsigned(vs2_val) - unsigned(vs1_val) - carry)
+        };
+        write_single_element(8, i, vd, result)
+      }
+    }
+  } else if SEW == 16 then {
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_body_vector_element(num_elem, LMUL_pow, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs1_val : bits(16) = read_single_element(16, i, vs1);
+        let vs2_val : bits(16) = read_single_element(16, i, vs2);
+        let carry = if V(zvreg)[i] == bitone then 1 else 0;
+        let result : bits(16) = match funct6 {
+          VVMS_VADC => to_bits_unsafe(16, unsigned(vs2_val) + unsigned(vs1_val) + carry),
+          VVMS_VSBC => to_bits_unsafe(16, unsigned(vs2_val) - unsigned(vs1_val) - carry)
+        };
+        write_single_element(16, i, vd, result)
+      }
+    }
+  } else if SEW == 32 then {
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_body_vector_element(num_elem, LMUL_pow, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs1_val : bits(32) = read_single_element(32, i, vs1);
+        let vs2_val : bits(32) = read_single_element(32, i, vs2);
+        let carry = if V(zvreg)[i] == bitone then 1 else 0;
+        let result : bits(32) = match funct6 {
+          VVMS_VADC => to_bits_unsafe(32, unsigned(vs2_val) + unsigned(vs1_val) + carry),
+          VVMS_VSBC => to_bits_unsafe(32, unsigned(vs2_val) - unsigned(vs1_val) - carry)
+        };
+        write_single_element(32, i, vd, result)
+      }
+    }
+  } else {
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_body_vector_element(num_elem, LMUL_pow, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs1_val : bits(64) = read_single_element(64, i, vs1);
+        let vs2_val : bits(64) = read_single_element(64, i, vs2);
+        let carry = if V(zvreg)[i] == bitone then 1 else 0;
+        let result : bits(64) = match funct6 {
+          VVMS_VADC => to_bits_unsafe(64, unsigned(vs2_val) + unsigned(vs1_val) + carry),
+          VVMS_VSBC => to_bits_unsafe(64, unsigned(vs2_val) - unsigned(vs1_val) - carry)
+        };
+        write_single_element(64, i, vd, result)
       }
     }
   };
-
-  write_vreg(num_elem, SEW, LMUL_pow, vd, result);
   set_vstart(zeros());
   RETIRE_SUCCESS
 }
@@ -213,35 +346,89 @@ function clause execute(VVCMPTYPE(funct6, vm, vs2, vs1, vd)) = {
 
   if illegal_vd_unmasked() then return Illegal_Instruction();
 
-  let 'n = num_elem;
-  let 'm = SEW;
+  assert(num_elem <= vlen);
 
-  let vm_val  : bits('n)     = read_vmask(num_elem, vm, zvreg);
-  let vs1_val : vector('n, bits('m)) = read_vreg(num_elem, SEW, LMUL_pow, vs1);
-  let vs2_val : vector('n, bits('m)) = read_vreg(num_elem, SEW, LMUL_pow, vs2);
-  let vd_val  : bits('n)     = read_vmask(num_elem, 0b0, vd);
-
-  let (initial_result, mask) : (bits('n), bits('n)) = match init_masked_result_cmp(num_elem, SEW, LMUL_pow, vd_val, vm_val) {
-    Ok(v)   => v,
-    Err(()) => return Illegal_Instruction()
-  };
-  var result = initial_result;
-
-  foreach (i from 0 to (num_elem - 1)) {
-    if mask[i] == bitone then {
-      let res : bool = match funct6 {
-        VVCMP_VMSEQ    => vs2_val[i] == vs1_val[i],
-        VVCMP_VMSNE    => vs2_val[i] != vs1_val[i],
-        VVCMP_VMSLTU   => unsigned(vs2_val[i]) < unsigned(vs1_val[i]),
-        VVCMP_VMSLT    => signed(vs2_val[i]) < signed(vs1_val[i]),
-        VVCMP_VMSLEU   => unsigned(vs2_val[i]) <= unsigned(vs1_val[i]),
-        VVCMP_VMSLE    => signed(vs2_val[i]) <= signed(vs1_val[i])
+  if SEW == 8 then {
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
       };
-      result[i] = bool_to_bit(res)
+      if active then {
+        let vs1_val : bits(8) = read_single_element(8, i, vs1);
+        let vs2_val : bits(8) = read_single_element(8, i, vs2);
+        let res : bool = match funct6 {
+          VVCMP_VMSEQ  => vs2_val == vs1_val,
+          VVCMP_VMSNE  => vs2_val != vs1_val,
+          VVCMP_VMSLTU => unsigned(vs2_val) < unsigned(vs1_val),
+          VVCMP_VMSLT  => signed(vs2_val) < signed(vs1_val),
+          VVCMP_VMSLEU => unsigned(vs2_val) <= unsigned(vs1_val),
+          VVCMP_VMSLE  => signed(vs2_val) <= signed(vs1_val)
+        };
+        V(vd) = [V(vd) with i = bool_to_bit(res)]
+      }
+    }
+  } else if SEW == 16 then {
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs1_val : bits(16) = read_single_element(16, i, vs1);
+        let vs2_val : bits(16) = read_single_element(16, i, vs2);
+        let res : bool = match funct6 {
+          VVCMP_VMSEQ  => vs2_val == vs1_val,
+          VVCMP_VMSNE  => vs2_val != vs1_val,
+          VVCMP_VMSLTU => unsigned(vs2_val) < unsigned(vs1_val),
+          VVCMP_VMSLT  => signed(vs2_val) < signed(vs1_val),
+          VVCMP_VMSLEU => unsigned(vs2_val) <= unsigned(vs1_val),
+          VVCMP_VMSLE  => signed(vs2_val) <= signed(vs1_val)
+        };
+        V(vd) = [V(vd) with i = bool_to_bit(res)]
+      }
+    }
+  } else if SEW == 32 then {
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs1_val : bits(32) = read_single_element(32, i, vs1);
+        let vs2_val : bits(32) = read_single_element(32, i, vs2);
+        let res : bool = match funct6 {
+          VVCMP_VMSEQ  => vs2_val == vs1_val,
+          VVCMP_VMSNE  => vs2_val != vs1_val,
+          VVCMP_VMSLTU => unsigned(vs2_val) < unsigned(vs1_val),
+          VVCMP_VMSLT  => signed(vs2_val) < signed(vs1_val),
+          VVCMP_VMSLEU => unsigned(vs2_val) <= unsigned(vs1_val),
+          VVCMP_VMSLE  => signed(vs2_val) <= signed(vs1_val)
+        };
+        V(vd) = [V(vd) with i = bool_to_bit(res)]
+      }
+    }
+  } else {
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs1_val : bits(64) = read_single_element(64, i, vs1);
+        let vs2_val : bits(64) = read_single_element(64, i, vs2);
+        let res : bool = match funct6 {
+          VVCMP_VMSEQ  => vs2_val == vs1_val,
+          VVCMP_VMSNE  => vs2_val != vs1_val,
+          VVCMP_VMSLTU => unsigned(vs2_val) < unsigned(vs1_val),
+          VVCMP_VMSLT  => signed(vs2_val) < signed(vs1_val),
+          VVCMP_VMSLEU => unsigned(vs2_val) <= unsigned(vs1_val),
+          VVCMP_VMSLE  => signed(vs2_val) <= signed(vs1_val)
+        };
+        V(vd) = [V(vd) with i = bool_to_bit(res)]
+      }
     }
   };
-
-  write_vmask(num_elem, vd, result);
   set_vstart(zeros());
   RETIRE_SUCCESS
 }
@@ -280,31 +467,77 @@ function clause execute(VXMTYPE(funct6, vs2, rs1, vd)) = {
 
   if illegal_vd_unmasked() then return Illegal_Instruction();
 
-  let 'n = num_elem;
-  let 'm = SEW;
+  assert(num_elem <= vlen);
 
-  let vm_val  : bits('n)     = read_vmask_carry(num_elem, 0b0, zvreg);
-  let rs1_val : bits('m)                  = get_scalar(rs1, SEW);
-  let vs2_val : vector('n, bits('m)) = read_vreg(num_elem, SEW, LMUL_pow, vs2);
-  let vd_val  : bits('n)     = read_vmask(num_elem, 0b0, vd);
-
-  let (initial_result, mask) : (bits('n), bits('n)) = match init_masked_result_carry(num_elem, SEW, LMUL_pow, vd_val) {
-    Ok(v)   => v,
-    Err(()) => return Illegal_Instruction()
-  };
-  var result = initial_result;
-
-  foreach (i from 0 to (num_elem - 1)) {
-    if mask[i] == bitone then {
-      let res : bool = match funct6 {
-        VXM_VMADC    => unsigned(vs2_val[i]) + unsigned(rs1_val) + (if vm_val[i] == bitone then 1 else 0) > 2 ^ SEW - 1,
-        VXM_VMSBC    => unsigned(vs2_val[i]) - unsigned(rs1_val) - (if vm_val[i] == bitone then 1 else 0) < 0
+  if SEW == 8 then {
+    let rs1_val : bits(8) = get_scalar(rs1, 8);
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_body_vector_element(num_elem, LMUL_pow, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
       };
-      result[i] = bool_to_bit(res)
+      if active then {
+        let vs2_val : bits(8) = read_single_element(8, i, vs2);
+        let carry = if V(zvreg)[i] == bitone then 1 else 0;
+        let res : bool = match funct6 {
+          VXM_VMADC => unsigned(vs2_val) + unsigned(rs1_val) + carry > 2 ^ 8 - 1,
+          VXM_VMSBC => unsigned(vs2_val) - unsigned(rs1_val) - carry < 0
+        };
+        V(vd) = [V(vd) with i = bool_to_bit(res)]
+      }
+    }
+  } else if SEW == 16 then {
+    let rs1_val : bits(16) = get_scalar(rs1, 16);
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_body_vector_element(num_elem, LMUL_pow, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(16) = read_single_element(16, i, vs2);
+        let carry = if V(zvreg)[i] == bitone then 1 else 0;
+        let res : bool = match funct6 {
+          VXM_VMADC => unsigned(vs2_val) + unsigned(rs1_val) + carry > 2 ^ 16 - 1,
+          VXM_VMSBC => unsigned(vs2_val) - unsigned(rs1_val) - carry < 0
+        };
+        V(vd) = [V(vd) with i = bool_to_bit(res)]
+      }
+    }
+  } else if SEW == 32 then {
+    let rs1_val : bits(32) = get_scalar(rs1, 32);
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_body_vector_element(num_elem, LMUL_pow, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(32) = read_single_element(32, i, vs2);
+        let carry = if V(zvreg)[i] == bitone then 1 else 0;
+        let res : bool = match funct6 {
+          VXM_VMADC => unsigned(vs2_val) + unsigned(rs1_val) + carry > 2 ^ 32 - 1,
+          VXM_VMSBC => unsigned(vs2_val) - unsigned(rs1_val) - carry < 0
+        };
+        V(vd) = [V(vd) with i = bool_to_bit(res)]
+      }
+    }
+  } else {
+    let rs1_val : bits(64) = get_scalar(rs1, 64);
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_body_vector_element(num_elem, LMUL_pow, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(64) = read_single_element(64, i, vs2);
+        let carry = if V(zvreg)[i] == bitone then 1 else 0;
+        let res : bool = match funct6 {
+          VXM_VMADC => unsigned(vs2_val) + unsigned(rs1_val) + carry > 2 ^ 64 - 1,
+          VXM_VMSBC => unsigned(vs2_val) - unsigned(rs1_val) - carry < 0
+        };
+        V(vd) = [V(vd) with i = bool_to_bit(res)]
+      }
     }
   };
-
-  write_vmask(num_elem, vd, result);
   set_vstart(zeros());
   RETIRE_SUCCESS
 }
@@ -339,30 +572,73 @@ function clause execute(VXMCTYPE(funct6, vs2, rs1, vd)) = {
 
   if illegal_vd_unmasked() then return Illegal_Instruction();
 
-  let 'n = num_elem;
-  let 'm = SEW;
+  assert(num_elem <= vlen);
 
-  let rs1_val : bits('m)             = get_scalar(rs1, SEW);
-  let vs2_val : vector('n, bits('m)) = read_vreg(num_elem, SEW, LMUL_pow, vs2);
-  let vd_val  : bits('n)     = read_vmask(num_elem, 0b0, vd);
-
-  let (initial_result, mask) : (bits('n), bits('n)) = match init_masked_result_carry(num_elem, SEW, LMUL_pow, vd_val) {
-    Ok(v)   => v,
-    Err(()) => return Illegal_Instruction()
-  };
-  var result = initial_result;
-
-  foreach (i from 0 to (num_elem - 1)) {
-    if mask[i] == bitone then {
-      let res : bool = match funct6 {
-        VXMC_VMADC    => unsigned(vs2_val[i]) + unsigned(rs1_val) > 2 ^ SEW - 1,
-        VXMC_VMSBC    => unsigned(vs2_val[i]) - unsigned(rs1_val) < 0
+  if SEW == 8 then {
+    let rs1_val : bits(8) = get_scalar(rs1, 8);
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_body_vector_element(num_elem, LMUL_pow, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
       };
-      result[i] = bool_to_bit(res)
+      if active then {
+        let vs2_val : bits(8) = read_single_element(8, i, vs2);
+        let res : bool = match funct6 {
+          VXMC_VMADC => unsigned(vs2_val) + unsigned(rs1_val) > 2 ^ 8 - 1,
+          VXMC_VMSBC => unsigned(vs2_val) - unsigned(rs1_val) < 0
+        };
+        V(vd) = [V(vd) with i = bool_to_bit(res)]
+      }
+    }
+  } else if SEW == 16 then {
+    let rs1_val : bits(16) = get_scalar(rs1, 16);
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_body_vector_element(num_elem, LMUL_pow, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(16) = read_single_element(16, i, vs2);
+        let res : bool = match funct6 {
+          VXMC_VMADC => unsigned(vs2_val) + unsigned(rs1_val) > 2 ^ 16 - 1,
+          VXMC_VMSBC => unsigned(vs2_val) - unsigned(rs1_val) < 0
+        };
+        V(vd) = [V(vd) with i = bool_to_bit(res)]
+      }
+    }
+  } else if SEW == 32 then {
+    let rs1_val : bits(32) = get_scalar(rs1, 32);
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_body_vector_element(num_elem, LMUL_pow, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(32) = read_single_element(32, i, vs2);
+        let res : bool = match funct6 {
+          VXMC_VMADC => unsigned(vs2_val) + unsigned(rs1_val) > 2 ^ 32 - 1,
+          VXMC_VMSBC => unsigned(vs2_val) - unsigned(rs1_val) < 0
+        };
+        V(vd) = [V(vd) with i = bool_to_bit(res)]
+      }
+    }
+  } else {
+    let rs1_val : bits(64) = get_scalar(rs1, 64);
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_body_vector_element(num_elem, LMUL_pow, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(64) = read_single_element(64, i, vs2);
+        let res : bool = match funct6 {
+          VXMC_VMADC => unsigned(vs2_val) + unsigned(rs1_val) > 2 ^ 64 - 1,
+          VXMC_VMSBC => unsigned(vs2_val) - unsigned(rs1_val) < 0
+        };
+        V(vd) = [V(vd) with i = bool_to_bit(res)]
+      }
     }
   };
-
-  write_vmask(num_elem, vd, result);
   set_vstart(zeros());
   RETIRE_SUCCESS
 }
@@ -397,33 +673,77 @@ function clause execute(VXMSTYPE(funct6, vs2, rs1, vd)) = {
 
   if illegal_vd_masked(vd) then return Illegal_Instruction();
 
-  let 'n = num_elem;
-  let 'm = SEW;
+  assert(num_elem <= vlen);
 
-  // for bypassing normal masking in init_masked_result
-  let vec_trues : bits('n) = ones();
-
-  let vm_val  : bits('n)     = read_vmask_carry(num_elem, 0b0, zvreg);
-  let rs1_val : bits('m)                  = get_scalar(rs1, SEW);
-  let vs2_val : vector('n, bits('m)) = read_vreg(num_elem, SEW, LMUL_pow, vs2);
-  let vd_val  : vector('n, bits('m)) = read_vreg(num_elem, SEW, LMUL_pow, vd);
-
-  let (initial_result, mask) : (vector('n, bits('m)), bits('n)) = match init_masked_result(num_elem, SEW, LMUL_pow, vd_val, vec_trues) {
-    Ok(v)   => v,
-    Err(()) => return Illegal_Instruction()
-  };
-  var result = initial_result;
-
-  foreach (i from 0 to (num_elem - 1)) {
-    if mask[i] == bitone then {
-      result[i] = match funct6 {
-        VXMS_VADC     => to_bits_unsafe(SEW, unsigned(vs2_val[i]) + unsigned(rs1_val) + (if vm_val[i] == bitone then 1 else 0)),
-        VXMS_VSBC     => to_bits_unsafe(SEW, unsigned(vs2_val[i]) - unsigned(rs1_val) - (if vm_val[i] == bitone then 1 else 0))
+  if SEW == 8 then {
+    let rs1_val : bits(8) = get_scalar(rs1, 8);
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_body_vector_element(num_elem, LMUL_pow, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(8) = read_single_element(8, i, vs2);
+        let carry = if V(zvreg)[i] == bitone then 1 else 0;
+        let result : bits(8) = match funct6 {
+          VXMS_VADC => to_bits_unsafe(8, unsigned(vs2_val) + unsigned(rs1_val) + carry),
+          VXMS_VSBC => to_bits_unsafe(8, unsigned(vs2_val) - unsigned(rs1_val) - carry)
+        };
+        write_single_element(8, i, vd, result)
+      }
+    }
+  } else if SEW == 16 then {
+    let rs1_val : bits(16) = get_scalar(rs1, 16);
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_body_vector_element(num_elem, LMUL_pow, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(16) = read_single_element(16, i, vs2);
+        let carry = if V(zvreg)[i] == bitone then 1 else 0;
+        let result : bits(16) = match funct6 {
+          VXMS_VADC => to_bits_unsafe(16, unsigned(vs2_val) + unsigned(rs1_val) + carry),
+          VXMS_VSBC => to_bits_unsafe(16, unsigned(vs2_val) - unsigned(rs1_val) - carry)
+        };
+        write_single_element(16, i, vd, result)
+      }
+    }
+  } else if SEW == 32 then {
+    let rs1_val : bits(32) = get_scalar(rs1, 32);
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_body_vector_element(num_elem, LMUL_pow, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(32) = read_single_element(32, i, vs2);
+        let carry = if V(zvreg)[i] == bitone then 1 else 0;
+        let result : bits(32) = match funct6 {
+          VXMS_VADC => to_bits_unsafe(32, unsigned(vs2_val) + unsigned(rs1_val) + carry),
+          VXMS_VSBC => to_bits_unsafe(32, unsigned(vs2_val) - unsigned(rs1_val) - carry)
+        };
+        write_single_element(32, i, vd, result)
+      }
+    }
+  } else {
+    let rs1_val : bits(64) = get_scalar(rs1, 64);
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_body_vector_element(num_elem, LMUL_pow, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(64) = read_single_element(64, i, vs2);
+        let carry = if V(zvreg)[i] == bitone then 1 else 0;
+        let result : bits(64) = match funct6 {
+          VXMS_VADC => to_bits_unsafe(64, unsigned(vs2_val) + unsigned(rs1_val) + carry),
+          VXMS_VSBC => to_bits_unsafe(64, unsigned(vs2_val) - unsigned(rs1_val) - carry)
+        };
+        write_single_element(64, i, vd, result)
       }
     }
   };
-
-  write_vreg(num_elem, SEW, LMUL_pow, vd, result);
   set_vstart(zeros());
   RETIRE_SUCCESS
 }
@@ -462,37 +782,97 @@ function clause execute(VXCMPTYPE(funct6, vm, vs2, rs1, vd)) = {
 
   if illegal_vd_unmasked() then return Illegal_Instruction();
 
-  let 'n = num_elem;
-  let 'm = SEW;
+  assert(num_elem <= vlen);
 
-  let vm_val  : bits('n)     = read_vmask(num_elem, vm, zvreg);
-  let rs1_val : bits('m)                  = get_scalar(rs1, SEW);
-  let vs2_val : vector('n, bits('m)) = read_vreg(num_elem, SEW, LMUL_pow, vs2);
-  let vd_val  : bits('n)     = read_vmask(num_elem, 0b0, vd);
-
-  let (initial_result, mask) : (bits('n), bits('n)) = match init_masked_result_cmp(num_elem, SEW, LMUL_pow, vd_val, vm_val) {
-    Ok(v)   => v,
-    Err(()) => return Illegal_Instruction()
-  };
-  var result = initial_result;
-
-  foreach (i from 0 to (num_elem - 1)) {
-    if mask[i] == bitone then {
-      let res : bool = match funct6 {
-        VXCMP_VMSEQ    => vs2_val[i] == rs1_val,
-        VXCMP_VMSNE    => vs2_val[i] != rs1_val,
-        VXCMP_VMSLTU   => unsigned(vs2_val[i]) < unsigned(rs1_val),
-        VXCMP_VMSLT    => signed(vs2_val[i]) < signed(rs1_val),
-        VXCMP_VMSLEU   => unsigned(vs2_val[i]) <= unsigned(rs1_val),
-        VXCMP_VMSLE    => signed(vs2_val[i]) <= signed(rs1_val),
-        VXCMP_VMSGTU   => unsigned(vs2_val[i]) > unsigned(rs1_val),
-        VXCMP_VMSGT    => signed(vs2_val[i]) > signed(rs1_val)
+  if SEW == 8 then {
+    let rs1_val : bits(8) = get_scalar(rs1, 8);
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
       };
-      result[i] = bool_to_bit(res)
+      if active then {
+        let vs2_val : bits(8) = read_single_element(8, i, vs2);
+        let res : bool = match funct6 {
+          VXCMP_VMSEQ  => vs2_val == rs1_val,
+          VXCMP_VMSNE  => vs2_val != rs1_val,
+          VXCMP_VMSLTU => unsigned(vs2_val) < unsigned(rs1_val),
+          VXCMP_VMSLT  => signed(vs2_val) < signed(rs1_val),
+          VXCMP_VMSLEU => unsigned(vs2_val) <= unsigned(rs1_val),
+          VXCMP_VMSLE  => signed(vs2_val) <= signed(rs1_val),
+          VXCMP_VMSGTU => unsigned(vs2_val) > unsigned(rs1_val),
+          VXCMP_VMSGT  => signed(vs2_val) > signed(rs1_val)
+        };
+        V(vd) = [V(vd) with i = bool_to_bit(res)]
+      }
+    }
+  } else if SEW == 16 then {
+    let rs1_val : bits(16) = get_scalar(rs1, 16);
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(16) = read_single_element(16, i, vs2);
+        let res : bool = match funct6 {
+          VXCMP_VMSEQ  => vs2_val == rs1_val,
+          VXCMP_VMSNE  => vs2_val != rs1_val,
+          VXCMP_VMSLTU => unsigned(vs2_val) < unsigned(rs1_val),
+          VXCMP_VMSLT  => signed(vs2_val) < signed(rs1_val),
+          VXCMP_VMSLEU => unsigned(vs2_val) <= unsigned(rs1_val),
+          VXCMP_VMSLE  => signed(vs2_val) <= signed(rs1_val),
+          VXCMP_VMSGTU => unsigned(vs2_val) > unsigned(rs1_val),
+          VXCMP_VMSGT  => signed(vs2_val) > signed(rs1_val)
+        };
+        V(vd) = [V(vd) with i = bool_to_bit(res)]
+      }
+    }
+  } else if SEW == 32 then {
+    let rs1_val : bits(32) = get_scalar(rs1, 32);
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(32) = read_single_element(32, i, vs2);
+        let res : bool = match funct6 {
+          VXCMP_VMSEQ  => vs2_val == rs1_val,
+          VXCMP_VMSNE  => vs2_val != rs1_val,
+          VXCMP_VMSLTU => unsigned(vs2_val) < unsigned(rs1_val),
+          VXCMP_VMSLT  => signed(vs2_val) < signed(rs1_val),
+          VXCMP_VMSLEU => unsigned(vs2_val) <= unsigned(rs1_val),
+          VXCMP_VMSLE  => signed(vs2_val) <= signed(rs1_val),
+          VXCMP_VMSGTU => unsigned(vs2_val) > unsigned(rs1_val),
+          VXCMP_VMSGT  => signed(vs2_val) > signed(rs1_val)
+        };
+        V(vd) = [V(vd) with i = bool_to_bit(res)]
+      }
+    }
+  } else {
+    let rs1_val : bits(64) = get_scalar(rs1, 64);
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(64) = read_single_element(64, i, vs2);
+        let res : bool = match funct6 {
+          VXCMP_VMSEQ  => vs2_val == rs1_val,
+          VXCMP_VMSNE  => vs2_val != rs1_val,
+          VXCMP_VMSLTU => unsigned(vs2_val) < unsigned(rs1_val),
+          VXCMP_VMSLT  => signed(vs2_val) < signed(rs1_val),
+          VXCMP_VMSLEU => unsigned(vs2_val) <= unsigned(rs1_val),
+          VXCMP_VMSLE  => signed(vs2_val) <= signed(rs1_val),
+          VXCMP_VMSGTU => unsigned(vs2_val) > unsigned(rs1_val),
+          VXCMP_VMSGT  => signed(vs2_val) > signed(rs1_val)
+        };
+        V(vd) = [V(vd) with i = bool_to_bit(res)]
+      }
     }
   };
-
-  write_vmask(num_elem, vd, result);
   set_vstart(zeros());
   RETIRE_SUCCESS
 }
@@ -532,30 +912,73 @@ function clause execute(VIMTYPE(funct6, vs2, simm, vd)) = {
 
   if illegal_vd_unmasked() then return Illegal_Instruction();
 
-  let 'n = num_elem;
-  let 'm = SEW;
+  assert(num_elem <= vlen);
 
-  let vm_val  : bits('n)     = read_vmask_carry(num_elem, 0b0, zvreg);
-  let imm_val : bits('m)                  = sign_extend(simm);
-  let vs2_val : vector('n, bits('m)) = read_vreg(num_elem, SEW, LMUL_pow, vs2);
-  let vd_val  : bits('n)     = read_vmask(num_elem, 0b0, vd);
-
-  let (initial_result, mask) : (bits('n), bits('n)) = match init_masked_result_carry(num_elem, SEW, LMUL_pow, vd_val) {
-    Ok(v)   => v,
-    Err(()) => return Illegal_Instruction()
-  };
-  var result = initial_result;
-
-  foreach (i from 0 to (num_elem - 1)) {
-    if mask[i] == bitone then {
-      let res : bool = match funct6 {
-        VIM_VMADC    => unsigned(vs2_val[i]) + unsigned(imm_val) + (if vm_val[i] == bitone then 1 else 0) > 2 ^ SEW - 1
+  if SEW == 8 then {
+    let imm_val : bits(8) = sign_extend(simm);
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_body_vector_element(num_elem, LMUL_pow, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
       };
-      result[i] = bool_to_bit(res)
+      if active then {
+        let vs2_val : bits(8) = read_single_element(8, i, vs2);
+        let carry = if V(zvreg)[i] == bitone then 1 else 0;
+        let res : bool = match funct6 {
+          VIM_VMADC => unsigned(vs2_val) + unsigned(imm_val) + carry > 2 ^ 8 - 1
+        };
+        V(vd) = [V(vd) with i = bool_to_bit(res)]
+      }
+    }
+  } else if SEW == 16 then {
+    let imm_val : bits(16) = sign_extend(simm);
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_body_vector_element(num_elem, LMUL_pow, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(16) = read_single_element(16, i, vs2);
+        let carry = if V(zvreg)[i] == bitone then 1 else 0;
+        let res : bool = match funct6 {
+          VIM_VMADC => unsigned(vs2_val) + unsigned(imm_val) + carry > 2 ^ 16 - 1
+        };
+        V(vd) = [V(vd) with i = bool_to_bit(res)]
+      }
+    }
+  } else if SEW == 32 then {
+    let imm_val : bits(32) = sign_extend(simm);
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_body_vector_element(num_elem, LMUL_pow, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(32) = read_single_element(32, i, vs2);
+        let carry = if V(zvreg)[i] == bitone then 1 else 0;
+        let res : bool = match funct6 {
+          VIM_VMADC => unsigned(vs2_val) + unsigned(imm_val) + carry > 2 ^ 32 - 1
+        };
+        V(vd) = [V(vd) with i = bool_to_bit(res)]
+      }
+    }
+  } else {
+    let imm_val : bits(64) = sign_extend(simm);
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_body_vector_element(num_elem, LMUL_pow, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(64) = read_single_element(64, i, vs2);
+        let carry = if V(zvreg)[i] == bitone then 1 else 0;
+        let res : bool = match funct6 {
+          VIM_VMADC => unsigned(vs2_val) + unsigned(imm_val) + carry > 2 ^ 64 - 1
+        };
+        V(vd) = [V(vd) with i = bool_to_bit(res)]
+      }
     }
   };
-
-  write_vmask(num_elem, vd, result);
   set_vstart(zeros());
   RETIRE_SUCCESS
 }
@@ -588,29 +1011,69 @@ function clause execute(VIMCTYPE(funct6, vs2, simm, vd)) = {
 
   if illegal_vd_unmasked() then return Illegal_Instruction();
 
-  let 'n = num_elem;
-  let 'm = SEW;
+  assert(num_elem <= vlen);
 
-  let imm_val : bits('m)             = sign_extend(simm);
-  let vs2_val : vector('n, bits('m)) = read_vreg(num_elem, SEW, LMUL_pow, vs2);
-  let vd_val  : bits('n)     = read_vmask(num_elem, 0b0, vd);
-
-  let (initial_result, mask) : (bits('n), bits('n)) = match init_masked_result_carry(num_elem, SEW, LMUL_pow, vd_val) {
-    Ok(v)   => v,
-    Err(()) => return Illegal_Instruction()
-  };
-  var result = initial_result;
-
-  foreach (i from 0 to (num_elem - 1)) {
-    if mask[i] == bitone then {
-      let res : bool = match funct6 {
-        VIMC_VMADC    => unsigned(vs2_val[i]) + unsigned(imm_val) > 2 ^ SEW - 1
+  if SEW == 8 then {
+    let imm_val : bits(8) = sign_extend(simm);
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_body_vector_element(num_elem, LMUL_pow, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
       };
-      result[i] = bool_to_bit(res)
+      if active then {
+        let vs2_val : bits(8) = read_single_element(8, i, vs2);
+        let res : bool = match funct6 {
+          VIMC_VMADC => unsigned(vs2_val) + unsigned(imm_val) > 2 ^ 8 - 1
+        };
+        V(vd) = [V(vd) with i = bool_to_bit(res)]
+      }
+    }
+  } else if SEW == 16 then {
+    let imm_val : bits(16) = sign_extend(simm);
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_body_vector_element(num_elem, LMUL_pow, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(16) = read_single_element(16, i, vs2);
+        let res : bool = match funct6 {
+          VIMC_VMADC => unsigned(vs2_val) + unsigned(imm_val) > 2 ^ 16 - 1
+        };
+        V(vd) = [V(vd) with i = bool_to_bit(res)]
+      }
+    }
+  } else if SEW == 32 then {
+    let imm_val : bits(32) = sign_extend(simm);
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_body_vector_element(num_elem, LMUL_pow, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(32) = read_single_element(32, i, vs2);
+        let res : bool = match funct6 {
+          VIMC_VMADC => unsigned(vs2_val) + unsigned(imm_val) > 2 ^ 32 - 1
+        };
+        V(vd) = [V(vd) with i = bool_to_bit(res)]
+      }
+    }
+  } else {
+    let imm_val : bits(64) = sign_extend(simm);
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_body_vector_element(num_elem, LMUL_pow, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(64) = read_single_element(64, i, vs2);
+        let res : bool = match funct6 {
+          VIMC_VMADC => unsigned(vs2_val) + unsigned(imm_val) > 2 ^ 64 - 1
+        };
+        V(vd) = [V(vd) with i = bool_to_bit(res)]
+      }
     }
   };
-
-  write_vmask(num_elem, vd, result);
   set_vstart(zeros());
   RETIRE_SUCCESS
 }
@@ -643,32 +1106,73 @@ function clause execute(VIMSTYPE(funct6, vs2, simm, vd)) = {
 
   if illegal_vd_masked(vd) then return Illegal_Instruction();
 
-  let 'n = num_elem;
-  let 'm = SEW;
+  assert(num_elem <= vlen);
 
-  // for bypassing normal masking in init_masked_result
-  let vec_trues : bits('n) = ones();
-
-  let vm_val  : bits('n)     = read_vmask_carry(num_elem, 0b0, zvreg);
-  let imm_val : bits('m)                  = sign_extend(simm);
-  let vs2_val : vector('n, bits('m)) = read_vreg(num_elem, SEW, LMUL_pow, vs2);
-  let vd_val  : vector('n, bits('m)) = read_vreg(num_elem, SEW, LMUL_pow, vd);
-
-  let (initial_result, mask) : (vector('n, bits('m)), bits('n)) = match init_masked_result(num_elem, SEW, LMUL_pow, vd_val, vec_trues) {
-    Ok(v)   => v,
-    Err(()) => return Illegal_Instruction()
-  };
-  var result = initial_result;
-
-  foreach (i from 0 to (num_elem - 1)) {
-    if mask[i] == bitone then {
-      result[i] = match funct6 {
-        VIMS_VADC     => to_bits_unsafe(SEW, unsigned(vs2_val[i]) + unsigned(imm_val) + (if vm_val[i] == bitone then 1 else 0))
+  if SEW == 8 then {
+    let imm_val : bits(8) = sign_extend(simm);
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_body_vector_element(num_elem, LMUL_pow, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(8) = read_single_element(8, i, vs2);
+        let carry = if V(zvreg)[i] == bitone then 1 else 0;
+        let result : bits(8) = match funct6 {
+          VIMS_VADC => to_bits_unsafe(8, unsigned(vs2_val) + unsigned(imm_val) + carry)
+        };
+        write_single_element(8, i, vd, result)
+      }
+    }
+  } else if SEW == 16 then {
+    let imm_val : bits(16) = sign_extend(simm);
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_body_vector_element(num_elem, LMUL_pow, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(16) = read_single_element(16, i, vs2);
+        let carry = if V(zvreg)[i] == bitone then 1 else 0;
+        let result : bits(16) = match funct6 {
+          VIMS_VADC => to_bits_unsafe(16, unsigned(vs2_val) + unsigned(imm_val) + carry)
+        };
+        write_single_element(16, i, vd, result)
+      }
+    }
+  } else if SEW == 32 then {
+    let imm_val : bits(32) = sign_extend(simm);
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_body_vector_element(num_elem, LMUL_pow, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(32) = read_single_element(32, i, vs2);
+        let carry = if V(zvreg)[i] == bitone then 1 else 0;
+        let result : bits(32) = match funct6 {
+          VIMS_VADC => to_bits_unsafe(32, unsigned(vs2_val) + unsigned(imm_val) + carry)
+        };
+        write_single_element(32, i, vd, result)
+      }
+    }
+  } else {
+    let imm_val : bits(64) = sign_extend(simm);
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_body_vector_element(num_elem, LMUL_pow, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(64) = read_single_element(64, i, vs2);
+        let carry = if V(zvreg)[i] == bitone then 1 else 0;
+        let result : bits(64) = match funct6 {
+          VIMS_VADC => to_bits_unsafe(64, unsigned(vs2_val) + unsigned(imm_val) + carry)
+        };
+        write_single_element(64, i, vd, result)
       }
     }
   };
-
-  write_vreg(num_elem, SEW, LMUL_pow, vd, result);
   set_vstart(zeros());
   RETIRE_SUCCESS
 }
@@ -704,35 +1208,89 @@ function clause execute(VICMPTYPE(funct6, vm, vs2, simm, vd)) = {
 
   if illegal_vd_unmasked() then return Illegal_Instruction();
 
-  let 'n = num_elem;
-  let 'm = SEW;
+  assert(num_elem <= vlen);
 
-  let vm_val  : bits('n)     = read_vmask(num_elem, vm, zvreg);
-  let imm_val : bits('m)                  = sign_extend(simm);
-  let vs2_val : vector('n, bits('m)) = read_vreg(num_elem, SEW, LMUL_pow, vs2);
-  let vd_val  : bits('n)     = read_vmask(num_elem, 0b0, vd);
-
-  let (initial_result, mask) : (bits('n), bits('n)) = match init_masked_result_cmp(num_elem, SEW, LMUL_pow, vd_val, vm_val) {
-    Ok(v)   => v,
-    Err(()) => return Illegal_Instruction()
-  };
-  var result = initial_result;
-
-  foreach (i from 0 to (num_elem - 1)) {
-    if mask[i] == bitone then {
-      let res : bool = match funct6 {
-        VICMP_VMSEQ    => vs2_val[i] == imm_val,
-        VICMP_VMSNE    => vs2_val[i] != imm_val,
-        VICMP_VMSLEU   => unsigned(vs2_val[i]) <= unsigned(imm_val),
-        VICMP_VMSLE    => signed(vs2_val[i]) <= signed(imm_val),
-        VICMP_VMSGTU   => unsigned(vs2_val[i]) > unsigned(imm_val),
-        VICMP_VMSGT    => signed(vs2_val[i]) > signed(imm_val)
+  if SEW == 8 then {
+    let imm_val : bits(8) = sign_extend(simm);
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
       };
-      result[i] = bool_to_bit(res)
+      if active then {
+        let vs2_val : bits(8) = read_single_element(8, i, vs2);
+        let res : bool = match funct6 {
+          VICMP_VMSEQ  => vs2_val == imm_val,
+          VICMP_VMSNE  => vs2_val != imm_val,
+          VICMP_VMSLEU => unsigned(vs2_val) <= unsigned(imm_val),
+          VICMP_VMSLE  => signed(vs2_val) <= signed(imm_val),
+          VICMP_VMSGTU => unsigned(vs2_val) > unsigned(imm_val),
+          VICMP_VMSGT  => signed(vs2_val) > signed(imm_val)
+        };
+        V(vd) = [V(vd) with i = bool_to_bit(res)]
+      }
+    }
+  } else if SEW == 16 then {
+    let imm_val : bits(16) = sign_extend(simm);
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(16) = read_single_element(16, i, vs2);
+        let res : bool = match funct6 {
+          VICMP_VMSEQ  => vs2_val == imm_val,
+          VICMP_VMSNE  => vs2_val != imm_val,
+          VICMP_VMSLEU => unsigned(vs2_val) <= unsigned(imm_val),
+          VICMP_VMSLE  => signed(vs2_val) <= signed(imm_val),
+          VICMP_VMSGTU => unsigned(vs2_val) > unsigned(imm_val),
+          VICMP_VMSGT  => signed(vs2_val) > signed(imm_val)
+        };
+        V(vd) = [V(vd) with i = bool_to_bit(res)]
+      }
+    }
+  } else if SEW == 32 then {
+    let imm_val : bits(32) = sign_extend(simm);
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(32) = read_single_element(32, i, vs2);
+        let res : bool = match funct6 {
+          VICMP_VMSEQ  => vs2_val == imm_val,
+          VICMP_VMSNE  => vs2_val != imm_val,
+          VICMP_VMSLEU => unsigned(vs2_val) <= unsigned(imm_val),
+          VICMP_VMSLE  => signed(vs2_val) <= signed(imm_val),
+          VICMP_VMSGTU => unsigned(vs2_val) > unsigned(imm_val),
+          VICMP_VMSGT  => signed(vs2_val) > signed(imm_val)
+        };
+        V(vd) = [V(vd) with i = bool_to_bit(res)]
+      }
+    }
+  } else {
+    let imm_val : bits(64) = sign_extend(simm);
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(64) = read_single_element(64, i, vs2);
+        let res : bool = match funct6 {
+          VICMP_VMSEQ  => vs2_val == imm_val,
+          VICMP_VMSNE  => vs2_val != imm_val,
+          VICMP_VMSLEU => unsigned(vs2_val) <= unsigned(imm_val),
+          VICMP_VMSLE  => signed(vs2_val) <= signed(imm_val),
+          VICMP_VMSGTU => unsigned(vs2_val) > unsigned(imm_val),
+          VICMP_VMSGT  => signed(vs2_val) > signed(imm_val)
+        };
+        V(vd) = [V(vd) with i = bool_to_bit(res)]
+      }
     }
   };
-
-  write_vmask(num_elem, vd, result);
   set_vstart(zeros());
   RETIRE_SUCCESS
 }

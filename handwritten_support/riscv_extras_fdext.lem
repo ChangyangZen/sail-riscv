@@ -15,209 +15,209 @@ type bitvector = list Sail2_values.bitU
 
 (* stub functions emulating the C softfloat interface *)
 
-val softfloat_f16_round_to_int : bitvector -> bitvector -> bool -> (bitvector * bitvector)
+val softfloat_f16_round_to_int : mword ty3 -> mword ty16 -> bool -> (mword ty5 * mword ty16)
 let softfloat_f16_round_to_int _ _ _ = fail
 
-val softfloat_f32_round_to_int : bitvector -> bitvector -> bool -> (bitvector * bitvector)
+val softfloat_f32_round_to_int : mword ty3 -> mword ty32 -> bool -> (mword ty5 * mword ty32)
 let softfloat_f32_round_to_int _ _ _ = fail
 
-val softfloat_f64_round_to_int : bitvector -> bitvector -> bool -> (bitvector * bitvector)
+val softfloat_f64_round_to_int : mword ty3 -> mword ty64 -> bool -> (mword ty5 * mword ty64)
 let softfloat_f64_round_to_int _ _ _ = fail
 
-val softfloat_f16_add : bitvector -> bitvector -> bitvector -> (bitvector * bitvector)
+val softfloat_f16_add : mword ty3 -> mword ty16 -> mword ty16 -> (mword ty5 * mword ty16)
 let softfloat_f16_add _ _ _ = fail
 
-val softfloat_f16_sub : bitvector -> bitvector -> bitvector -> (bitvector * bitvector)
+val softfloat_f16_sub : mword ty3 -> mword ty16 -> mword ty16 -> (mword ty5 * mword ty16)
 let softfloat_f16_sub _ _ _ = fail
 
-val softfloat_f16_mul : bitvector -> bitvector -> bitvector -> (bitvector * bitvector)
+val softfloat_f16_mul : mword ty3 -> mword ty16 -> mword ty16 -> (mword ty5 * mword ty16)
 let softfloat_f16_mul _ _ _ = fail
 
-val softfloat_f16_div : bitvector -> bitvector -> bitvector -> (bitvector * bitvector)
+val softfloat_f16_div : mword ty3 -> mword ty16 -> mword ty16 -> (mword ty5 * mword ty16)
 let softfloat_f16_div _ _ _ = fail
 
-val softfloat_f32_add : bitvector -> bitvector -> bitvector -> (bitvector * bitvector)
+val softfloat_f32_add : mword ty3 -> mword ty32 -> mword ty32 -> (mword ty5 * mword ty32)
 let softfloat_f32_add _ _ _ = fail
 
-val softfloat_f32_sub : bitvector -> bitvector -> bitvector -> (bitvector * bitvector)
+val softfloat_f32_sub : mword ty3 -> mword ty32 -> mword ty32 -> (mword ty5 * mword ty32)
 let softfloat_f32_sub _ _ _ = fail
 
-val softfloat_f32_mul : bitvector -> bitvector -> bitvector -> (bitvector * bitvector)
+val softfloat_f32_mul : mword ty3 -> mword ty32 -> mword ty32 -> (mword ty5 * mword ty32)
 let softfloat_f32_mul _ _ _ = fail
 
-val softfloat_f32_div : bitvector -> bitvector -> bitvector -> (bitvector * bitvector)
+val softfloat_f32_div : mword ty3 -> mword ty32 -> mword ty32 -> (mword ty5 * mword ty32)
 let softfloat_f32_div _ _ _ = fail
 
-val softfloat_f64_add : bitvector -> bitvector -> bitvector -> (bitvector * bitvector)
+val softfloat_f64_add : mword ty3 -> mword ty64 -> mword ty64 -> (mword ty5 * mword ty64)
 let softfloat_f64_add _ _ _ = fail
 
-val softfloat_f64_sub : bitvector -> bitvector -> bitvector -> (bitvector * bitvector)
+val softfloat_f64_sub : mword ty3 -> mword ty64 -> mword ty64 -> (mword ty5 * mword ty64)
 let softfloat_f64_sub _ _ _ = fail
 
-val softfloat_f64_mul : bitvector -> bitvector -> bitvector -> (bitvector * bitvector)
+val softfloat_f64_mul : mword ty3 -> mword ty64 -> mword ty64 -> (mword ty5 * mword ty64)
 let softfloat_f64_mul _ _ _ = fail
 
-val softfloat_f64_div : bitvector -> bitvector -> bitvector -> (bitvector * bitvector)
+val softfloat_f64_div : mword ty3 -> mword ty64 -> mword ty64 -> (mword ty5 * mword ty64)
 let softfloat_f64_div _ _ _ = fail
 
 
-val softfloat_f16_muladd : bitvector -> bitvector -> bitvector -> bitvector -> (bitvector * bitvector)
+val softfloat_f16_muladd : mword ty3 -> mword ty16 -> mword ty16 -> mword ty16 -> (mword ty5 * mword ty16)
 let softfloat_f16_muladd _ _ _ _ = fail
 
-val softfloat_f32_muladd : bitvector -> bitvector -> bitvector -> bitvector -> (bitvector * bitvector)
+val softfloat_f32_muladd : mword ty3 -> mword ty32 -> mword ty32 -> mword ty32 -> (mword ty5 * mword ty32)
 let softfloat_f32_muladd _ _ _ _ = fail
 
-val softfloat_f64_muladd : bitvector -> bitvector -> bitvector -> bitvector -> (bitvector * bitvector)
+val softfloat_f64_muladd : mword ty3 -> mword ty64 -> mword ty64 -> mword ty64 -> (mword ty5 * mword ty64)
 let softfloat_f64_muladd _ _ _ _ = fail
 
 
-val softfloat_f16_sqrt : bitvector -> bitvector -> (bitvector * bitvector)
+val softfloat_f16_sqrt : mword ty3 -> mword ty16 -> (mword ty5 * mword ty16)
 let softfloat_f16_sqrt _ _ = fail
 
-val softfloat_f32_sqrt : bitvector -> bitvector -> (bitvector * bitvector)
+val softfloat_f32_sqrt : mword ty3 -> mword ty32 -> (mword ty5 * mword ty32)
 let softfloat_f32_sqrt _ _ = fail
 
-val softfloat_f64_sqrt : bitvector -> bitvector -> (bitvector * bitvector)
+val softfloat_f64_sqrt : mword ty3 -> mword ty64 -> (mword ty5 * mword ty64)
 let softfloat_f64_sqrt _ _ = fail
 
 
-val softfloat_f16_to_i32: bitvector -> bitvector -> (bitvector * bitvector)
+val softfloat_f16_to_i32: mword ty3 -> mword ty16 -> (mword ty5 * mword ty32)
 let softfloat_f16_to_i32 _ _ = fail
 
-val softfloat_f16_to_ui32: bitvector -> bitvector -> (bitvector * bitvector)
+val softfloat_f16_to_ui32: mword ty3 -> mword ty16 -> (mword ty5 * mword ty32)
 let softfloat_f16_to_ui32 _ _ = fail
 
-val softfloat_i32_to_f16: bitvector -> bitvector -> (bitvector * bitvector)
+val softfloat_i32_to_f16: mword ty3 -> mword ty32 -> (mword ty5 * mword ty16)
 let softfloat_i32_to_f16 _ _ = fail
 
-val softfloat_ui32_to_f16: bitvector -> bitvector -> (bitvector * bitvector)
+val softfloat_ui32_to_f16: mword ty3 -> mword ty32 -> (mword ty5 * mword ty16)
 let softfloat_ui32_to_f16 _ _ = fail
 
-val softfloat_f16_to_i64: bitvector -> bitvector -> (bitvector * bitvector)
+val softfloat_f16_to_i64: mword ty3 -> mword ty16 -> (mword ty5 * mword ty64)
 let softfloat_f16_to_i64 _ _ = fail
 
-val softfloat_f16_to_ui64: bitvector -> bitvector -> (bitvector * bitvector)
+val softfloat_f16_to_ui64: mword ty3 -> mword ty16 -> (mword ty5 * mword ty64)
 let softfloat_f16_to_ui64 _ _ = fail
 
-val softfloat_i64_to_f16: bitvector -> bitvector -> (bitvector * bitvector)
+val softfloat_i64_to_f16: mword ty3 -> mword ty64 -> (mword ty5 * mword ty16)
 let softfloat_i64_to_f16 _ _ = fail
 
-val softfloat_ui64_to_f16: bitvector -> bitvector -> (bitvector * bitvector)
+val softfloat_ui64_to_f16: mword ty3 -> mword ty64 -> (mword ty5 * mword ty16)
 let softfloat_ui64_to_f16 _ _ = fail
 
 
-val softfloat_f32_to_i32: bitvector -> bitvector -> (bitvector * bitvector)
+val softfloat_f32_to_i32: mword ty3 -> mword ty32 -> (mword ty5 * mword ty32)
 let softfloat_f32_to_i32 _ _ = fail
 
-val softfloat_f32_to_ui32: bitvector -> bitvector -> (bitvector * bitvector)
+val softfloat_f32_to_ui32: mword ty3 -> mword ty32 -> (mword ty5 * mword ty32)
 let softfloat_f32_to_ui32 _ _ = fail
 
-val softfloat_i32_to_f32: bitvector -> bitvector -> (bitvector * bitvector)
+val softfloat_i32_to_f32: mword ty3 -> mword ty32 -> (mword ty5 * mword ty32)
 let softfloat_i32_to_f32 _ _ = fail
 
-val softfloat_ui32_to_f32: bitvector -> bitvector -> (bitvector * bitvector)
+val softfloat_ui32_to_f32: mword ty3 -> mword ty32 -> (mword ty5 * mword ty32)
 let softfloat_ui32_to_f32 _ _ = fail
 
-val softfloat_f32_to_i64: bitvector -> bitvector -> (bitvector * bitvector)
+val softfloat_f32_to_i64: mword ty3 -> mword ty32 -> (mword ty5 * mword ty64)
 let softfloat_f32_to_i64 _ _ = fail
 
-val softfloat_f32_to_ui64: bitvector -> bitvector -> (bitvector * bitvector)
+val softfloat_f32_to_ui64: mword ty3 -> mword ty32 -> (mword ty5 * mword ty64)
 let softfloat_f32_to_ui64 _ _ = fail
 
-val softfloat_i64_to_f32: bitvector -> bitvector -> (bitvector * bitvector)
+val softfloat_i64_to_f32: mword ty3 -> mword ty64 -> (mword ty5 * mword ty32)
 let softfloat_i64_to_f32 _ _ = fail
 
-val softfloat_ui64_to_f32: bitvector -> bitvector -> (bitvector * bitvector)
+val softfloat_ui64_to_f32: mword ty3 -> mword ty64 -> (mword ty5 * mword ty32)
 let softfloat_ui64_to_f32 _ _ = fail
 
 
-val softfloat_f64_to_i32: bitvector -> bitvector -> (bitvector * bitvector)
+val softfloat_f64_to_i32: mword ty3 -> mword ty64 -> (mword ty5 * mword ty32)
 let softfloat_f64_to_i32 _ _ = fail
 
-val softfloat_f64_to_ui32: bitvector -> bitvector -> (bitvector * bitvector)
+val softfloat_f64_to_ui32: mword ty3 -> mword ty64 -> (mword ty5 * mword ty32)
 let softfloat_f64_to_ui32 _ _ = fail
 
-val softfloat_i32_to_f64: bitvector -> bitvector -> (bitvector * bitvector)
+val softfloat_i32_to_f64: mword ty3 -> mword ty32 -> (mword ty5 * mword ty64)
 let softfloat_i32_to_f64 _ _ = fail
 
-val softfloat_ui32_to_f64: bitvector -> bitvector -> (bitvector * bitvector)
+val softfloat_ui32_to_f64: mword ty3 -> mword ty32 -> (mword ty5 * mword ty64)
 let softfloat_ui32_to_f64 _ _ = fail
 
-val softfloat_f64_to_i64: bitvector -> bitvector -> (bitvector * bitvector)
+val softfloat_f64_to_i64: mword ty3 -> mword ty64 -> (mword ty5 * mword ty64)
 let softfloat_f64_to_i64 _ _ = fail
 
-val softfloat_f64_to_ui64: bitvector -> bitvector -> (bitvector * bitvector)
+val softfloat_f64_to_ui64: mword ty3 -> mword ty64 -> (mword ty5 * mword ty64)
 let softfloat_f64_to_ui64 _ _ = fail
 
-val softfloat_i64_to_f64: bitvector -> bitvector -> (bitvector * bitvector)
+val softfloat_i64_to_f64: mword ty3 -> mword ty64 -> (mword ty5 * mword ty64)
 let softfloat_i64_to_f64 _ _ = fail
 
-val softfloat_ui64_to_f64: bitvector -> bitvector -> (bitvector * bitvector)
+val softfloat_ui64_to_f64: mword ty3 -> mword ty64 -> (mword ty5 * mword ty64)
 let softfloat_ui64_to_f64 _ _ = fail
 
 
-val softfloat_f16_to_f32: bitvector -> bitvector -> (bitvector * bitvector)
+val softfloat_f16_to_f32: mword ty3 -> mword ty16 -> (mword ty5 * mword ty32)
 let softfloat_f16_to_f32 _ _ = fail
 
-val softfloat_f16_to_f64: bitvector -> bitvector -> (bitvector * bitvector)
+val softfloat_f16_to_f64: mword ty3 -> mword ty16 -> (mword ty5 * mword ty64)
 let softfloat_f16_to_f64 _ _ = fail
 
-val softfloat_f32_to_f64: bitvector -> bitvector -> (bitvector * bitvector)
+val softfloat_f32_to_f64: mword ty3 -> mword ty32 -> (mword ty5 * mword ty64)
 let softfloat_f32_to_f64 _ _ = fail
 
-val softfloat_f32_to_f16: bitvector -> bitvector -> (bitvector * bitvector)
+val softfloat_f32_to_f16: mword ty3 -> mword ty32 -> (mword ty5 * mword ty16)
 let softfloat_f32_to_f16 _ _ = fail
 
-val softfloat_f64_to_f16: bitvector -> bitvector -> (bitvector * bitvector)
+val softfloat_f64_to_f16: mword ty3 -> mword ty64 -> (mword ty5 * mword ty16)
 let softfloat_f64_to_f16 _ _ = fail
 
-val softfloat_f64_to_f32: bitvector -> bitvector -> (bitvector * bitvector)
+val softfloat_f64_to_f32: mword ty3 -> mword ty64 -> (mword ty5 * mword ty32)
 let softfloat_f64_to_f32 _ _ = fail
 
-val softfloat_f32_to_bf16: bitvector -> bitvector -> (bitvector * bitvector)
+val softfloat_f32_to_bf16: mword ty3 -> mword ty32 -> (mword ty5 * mword ty16)
 let softfloat_f32_to_bf16 _ _ = fail
 
-val softfloat_f16_lt : bitvector -> bitvector -> (bitvector * bitvector)
+val softfloat_f16_lt : mword ty16 -> mword ty16 -> (mword ty5 * bool)
 let softfloat_f16_lt _ _ = fail
 
-val softfloat_f16_lt_quiet : bitvector -> bitvector -> (bitvector * bitvector)
+val softfloat_f16_lt_quiet : mword ty16 -> mword ty16 -> (mword ty5 * bool)
 let softfloat_f16_lt_quiet _ _ = fail
 
-val softfloat_f16_le : bitvector -> bitvector -> (bitvector * bitvector)
+val softfloat_f16_le : mword ty16 -> mword ty16 -> (mword ty5 * bool)
 let softfloat_f16_le _ _ = fail
 
-val softfloat_f16_le_quiet : bitvector -> bitvector -> (bitvector * bitvector)
+val softfloat_f16_le_quiet : mword ty16 -> mword ty16 -> (mword ty5 * bool)
 let softfloat_f16_le_quiet _ _ = fail
 
-val softfloat_f16_eq : bitvector -> bitvector -> (bitvector * bitvector)
+val softfloat_f16_eq : mword ty16 -> mword ty16 -> (mword ty5 * bool)
 let softfloat_f16_eq _ _ = fail
 
-val softfloat_f32_lt : bitvector -> bitvector -> (bitvector * bitvector)
+val softfloat_f32_lt : mword ty32 -> mword ty32 -> (mword ty5 * bool)
 let softfloat_f32_lt _ _ = fail
 
-val softfloat_f32_lt_quiet : bitvector -> bitvector -> (bitvector * bitvector)
+val softfloat_f32_lt_quiet : mword ty32 -> mword ty32 -> (mword ty5 * bool)
 let softfloat_f32_lt_quiet _ _ = fail
 
-val softfloat_f32_le : bitvector -> bitvector -> (bitvector * bitvector)
+val softfloat_f32_le : mword ty32 -> mword ty32 -> (mword ty5 * bool)
 let softfloat_f32_le _ _ = fail
 
-val softfloat_f32_le_quiet : bitvector -> bitvector -> (bitvector * bitvector)
+val softfloat_f32_le_quiet : mword ty32 -> mword ty32 -> (mword ty5 * bool)
 let softfloat_f32_le_quiet _ _ = fail
 
-val softfloat_f32_eq : bitvector -> bitvector -> (bitvector * bitvector)
+val softfloat_f32_eq : mword ty32 -> mword ty32 -> (mword ty5 * bool)
 let softfloat_f32_eq _ _ = fail
 
-val softfloat_f64_lt : bitvector -> bitvector -> (bitvector * bitvector)
+val softfloat_f64_lt : mword ty64 -> mword ty64 -> (mword ty5 * bool)
 let softfloat_f64_lt _ _ = fail
 
-val softfloat_f64_lt_quiet : bitvector -> bitvector -> (bitvector * bitvector)
+val softfloat_f64_lt_quiet : mword ty64 -> mword ty64 -> (mword ty5 * bool)
 let softfloat_f64_lt_quiet _ _ = fail
 
-val softfloat_f64_le : bitvector -> bitvector -> (bitvector * bitvector)
+val softfloat_f64_le : mword ty64 -> mword ty64 -> (mword ty5 * bool)
 let softfloat_f64_le _ _ = fail
 
-val softfloat_f64_le_quiet : bitvector -> bitvector -> (bitvector * bitvector)
+val softfloat_f64_le_quiet : mword ty64 -> mword ty64 -> (mword ty5 * bool)
 let softfloat_f64_le_quiet _ _ = fail
 
-val softfloat_f64_eq : bitvector -> bitvector -> (bitvector * bitvector)
+val softfloat_f64_eq : mword ty64 -> mword ty64 -> (mword ty5 * bool)
 let softfloat_f64_eq _ _ = fail

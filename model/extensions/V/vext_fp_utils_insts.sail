@@ -164,9 +164,9 @@ val get_scalar_fp : forall 'n, 'n in {16, 32, 64}. (fregidx, int('n)) -> bits('n
 function get_scalar_fp(rs1, SEW) = {
   assert(flen >= SEW, "invalid vector floating-point type width: FLEN < SEW");
   match SEW {
-    16 => F_H(rs1),
-    32 => F_S(rs1),
-    64 => F_D(rs1)
+    16 => to_bits_truncate(SEW, unsigned(F_H(rs1))),
+    32 => to_bits_truncate(SEW, unsigned(F_S(rs1))),
+    64 => to_bits_truncate(SEW, unsigned(F_D(rs1)))
   }
 }
 
@@ -474,9 +474,9 @@ function rsqrt7 (v, sub) = {
 
   let (normalized_exp, normalized_sig) =
       if sub then {
-        let nr_leadingzeros = count_leading_zeros(sig[s - 1 .. 0]);
+        let nr_leadingzeros = count_leading_zeros(sig) - (64 - s);
         assert(nr_leadingzeros >= 0);
-        (to_bits_unsafe(64, (0 - nr_leadingzeros)), zero_extend(64, sig[(s - 1) .. 0] << (1 + nr_leadingzeros)))
+        (to_bits_unsafe(64, (0 - nr_leadingzeros)), sig << (1 + nr_leadingzeros))
       } else {
         (exp, sig)
       };
@@ -487,9 +487,9 @@ function rsqrt7 (v, sub) = {
     64 => unsigned([normalized_exp[0]] @ normalized_sig[51 .. 46])
   };
   assert(idx >= 0 & idx < 128);
-  let out_sig = to_bits_unsafe(s, table[(127 - idx)]) << (s - 7);
-  let out_exp = to_bits_unsafe(e, quot_round_zero(3 * (2 ^ (e - 1) - 1) - 1 - signed(normalized_exp), 2));
-  zero_extend(64, sign @ out_exp @ out_sig)
+  let out_sig = table[(127 - idx)] * (2 ^ (s - 7));
+  let out_exp = quot_round_zero(3 * (2 ^ (e - 1) - 1) - 1 - signed(normalized_exp), 2);
+  to_bits_truncate(64, unsigned(sign) * (2 ^ (e + s)) + out_exp * (2 ^ s) + out_sig)
 }
 
 val riscv_f16Rsqrte7 : (bits_rm, bits_H) -> (bits_fflags, bits_H)
@@ -565,11 +565,11 @@ function recip7 (v, rm_3b, sub) = {
       8, 8, 7, 7, 6, 5, 5, 4,
       4, 3, 3, 2, 2, 1, 1, 0];
 
-  let nr_leadingzeros = count_leading_zeros(sig[s - 1 .. 0]);
+  let nr_leadingzeros = count_leading_zeros(sig) - (64 - s);
   assert(nr_leadingzeros >= 0);
   let (normalized_exp, normalized_sig) =
       if sub then {
-        (to_bits_unsafe(64, (0 - nr_leadingzeros)), zero_extend(64, sig[(s - 1) .. 0] << (1 + nr_leadingzeros)))
+        (to_bits_unsafe(64, (0 - nr_leadingzeros)), sig << (1 + nr_leadingzeros))
       } else {
         (exp, sig)
       };
@@ -580,22 +580,22 @@ function recip7 (v, rm_3b, sub) = {
     64 => unsigned(normalized_sig[51 .. 45])
   };
   assert(idx >= 0 & idx < 128);
-  let mid_exp = to_bits_unsafe(e, 2 * (2 ^ (e - 1) - 1) - 1 - signed(normalized_exp));
-  let mid_sig = to_bits_unsafe(s, table[(127 - idx)]) << (s - 7);
+  let mid_exp : int = 2 * (2 ^ (e - 1) - 1) - 1 - signed(normalized_exp);
+  let mid_sig : int = table[(127 - idx)] * (2 ^ (s - 7));
 
-  let (out_exp, out_sig)=
-      if mid_exp == zeros(e) then {
-        (mid_exp, mid_sig >> 1 | 0b1 @ zeros(s - 1))
-      } else if mid_exp == ones(e) then {
-        (zeros(e), mid_sig >> 2 | 0b01 @ zeros(s - 2))
+  let (out_exp, out_sig) : (int, int) =
+      if mid_exp == 0 then {
+        (mid_exp, quot_round_zero(mid_sig, 2) + 2 ^ (s - 1))
+      } else if mid_exp == 2 ^ e - 1 then {
+        (0, quot_round_zero(mid_sig, 4) + 2 ^ (s - 2))
       } else (mid_exp, mid_sig);
 
   if sub & nr_leadingzeros > 1 then {
       if (rm_3b == 0b001 | rm_3b == 0b010 & sign == 0b0 | rm_3b == 0b011 & sign == 0b1) then {
-        (true, zero_extend(64, sign @ ones(e - 1) @ 0b0 @ ones(s)))
+        (true, to_bits_truncate(64, unsigned(sign) * (2 ^ (e + s)) + (2 * (2 ^ (e - 1) - 1)) * (2 ^ s) + (2 ^ s - 1)))
       }
-      else (true, zero_extend(64, sign @ ones(e) @ zeros(s)))
-    } else (false, zero_extend(64, sign @ out_exp @ out_sig))
+      else (true, to_bits_truncate(64, unsigned(sign) * (2 ^ (e + s)) + (2 ^ e - 1) * (2 ^ s)))
+    } else (false, to_bits_truncate(64, unsigned(sign) * (2 ^ (e + s)) + out_exp * (2 ^ s) + out_sig))
 }
 
 val riscv_f16Recip7 : (bits_rm, bits_H) -> (bits_fflags, bits_H)

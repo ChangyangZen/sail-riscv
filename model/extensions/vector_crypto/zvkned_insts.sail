@@ -27,25 +27,34 @@ function clause execute (VAESDF(funct6, vs2, vd)) = {
 
   assert(SEW == 32);
 
-  let vs2_val = read_vreg(num_elem, SEW, LMUL_pow, vs2);
-  let vd_val  = read_vreg(num_elem, SEW, LMUL_pow, vd);
-
   let eg_len   = (unsigned(vl) / 4);
   let eg_start = (unsigned(vstart) / 4);
 
   foreach (i from eg_start to (eg_len - 1)) {
     assert(i * 4 + 3 < num_elem);
 
-    let state = get_velem_quad(vd_val, i);
-    let rkey : bits(128) = match funct6 {
-      ZVK_VAESDF_VV => get_velem_quad(vs2_val, i),
-      ZVK_VAESDF_VS => get_velem_quad(vs2_val, 0),
+    let rkey_i : nat = match funct6 {
+      ZVK_VAESDF_VV => i,
+      ZVK_VAESDF_VS => 0,
     };
+    let state : bits(128) =
+      read_single_element(32, i * 4 + 3, vd) @
+      read_single_element(32, i * 4 + 2, vd) @
+      read_single_element(32, i * 4 + 1, vd) @
+      read_single_element(32, i * 4 + 0, vd);
+    let rkey : bits(128) =
+      read_single_element(32, rkey_i * 4 + 3, vs2) @
+      read_single_element(32, rkey_i * 4 + 2, vs2) @
+      read_single_element(32, rkey_i * 4 + 1, vs2) @
+      read_single_element(32, rkey_i * 4 + 0, vs2);
     let sr  = aes_shift_rows_inv(state);
     let sb  = aes_subbytes_inv(sr);
     let ark = sb ^ rkey;
 
-    write_velem_quad(vd, SEW, ark, i);
+    write_single_element(32, i * 4 + 0, vd, ark[31 .. 0]);
+    write_single_element(32, i * 4 + 1, vd, ark[63 .. 32]);
+    write_single_element(32, i * 4 + 2, vd, ark[95 .. 64]);
+    write_single_element(32, i * 4 + 3, vd, ark[127 .. 96]);
   };
 
   set_vstart(zeros());
@@ -79,26 +88,35 @@ function clause execute (VAESDM(funct6, vs2, vd)) = {
 
   assert(SEW == 32);
 
-  let vs2_val = read_vreg(num_elem, SEW, LMUL_pow, vs2);
-  let vd_val  = read_vreg(num_elem, SEW, LMUL_pow, vd);
-
   let eg_len   = (unsigned(vl) / 4);
   let eg_start = (unsigned(vstart) / 4);
 
   foreach (i from eg_start to (eg_len - 1)) {
     assert(i * 4 + 3 < num_elem);
 
-    let state = get_velem_quad(vd_val, i);
-    let rkey : bits(128) = match funct6 {
-      ZVK_VAESDM_VV => get_velem_quad(vs2_val, i),
-      ZVK_VAESDM_VS => get_velem_quad(vs2_val, 0),
+    let rkey_i : nat = match funct6 {
+      ZVK_VAESDM_VV => i,
+      ZVK_VAESDM_VS => 0,
     };
+    let state : bits(128) =
+      read_single_element(32, i * 4 + 3, vd) @
+      read_single_element(32, i * 4 + 2, vd) @
+      read_single_element(32, i * 4 + 1, vd) @
+      read_single_element(32, i * 4 + 0, vd);
+    let rkey : bits(128) =
+      read_single_element(32, rkey_i * 4 + 3, vs2) @
+      read_single_element(32, rkey_i * 4 + 2, vs2) @
+      read_single_element(32, rkey_i * 4 + 1, vs2) @
+      read_single_element(32, rkey_i * 4 + 0, vs2);
     let sr    = aes_shift_rows_inv(state);
     let sb    = aes_subbytes_inv(sr);
     let ark   = sb ^ rkey;
     let mix   = aes_mixcolumns_inv(ark);
 
-    write_velem_quad(vd, SEW, mix, i);
+    write_single_element(32, i * 4 + 0, vd, mix[31 .. 0]);
+    write_single_element(32, i * 4 + 1, vd, mix[63 .. 32]);
+    write_single_element(32, i * 4 + 2, vd, mix[95 .. 64]);
+    write_single_element(32, i * 4 + 3, vd, mix[127 .. 96]);
   };
 
   set_vstart(zeros());
@@ -132,25 +150,34 @@ function clause execute (VAESEF(funct6, vs2, vd)) = {
 
   assert(SEW == 32);
 
-  let vs2_val = read_vreg(num_elem, SEW, LMUL_pow, vs2);
-  let vd_val  = read_vreg(num_elem, SEW, LMUL_pow, vd);
-
   let eg_len   = (unsigned(vl) / 4);
   let eg_start = (unsigned(vstart) / 4);
 
   foreach (i from eg_start to (eg_len - 1)) {
     assert(i * 4 + 3 < num_elem);
 
-    let state = get_velem_quad(vd_val, i);
-    let rkey : bits(128) = match funct6 {
-      ZVK_VAESEF_VV => get_velem_quad(vs2_val, i),
-      ZVK_VAESEF_VS => get_velem_quad(vs2_val, 0),
+    let rkey_i : nat = match funct6 {
+      ZVK_VAESEF_VV => i,
+      ZVK_VAESEF_VS => 0,
     };
+    let state : bits(128) =
+      read_single_element(32, i * 4 + 3, vd) @
+      read_single_element(32, i * 4 + 2, vd) @
+      read_single_element(32, i * 4 + 1, vd) @
+      read_single_element(32, i * 4 + 0, vd);
+    let rkey : bits(128) =
+      read_single_element(32, rkey_i * 4 + 3, vs2) @
+      read_single_element(32, rkey_i * 4 + 2, vs2) @
+      read_single_element(32, rkey_i * 4 + 1, vs2) @
+      read_single_element(32, rkey_i * 4 + 0, vs2);
     let sb    = aes_subbytes_fwd(state);
     let sr    = aes_shift_rows_fwd(sb);
     let ark   = sr ^ rkey;
 
-    write_velem_quad(vd, SEW, ark, i);
+    write_single_element(32, i * 4 + 0, vd, ark[31 .. 0]);
+    write_single_element(32, i * 4 + 1, vd, ark[63 .. 32]);
+    write_single_element(32, i * 4 + 2, vd, ark[95 .. 64]);
+    write_single_element(32, i * 4 + 3, vd, ark[127 .. 96]);
   };
 
   set_vstart(zeros());
@@ -184,26 +211,35 @@ function clause execute (VAESEM(funct6, vs2, vd)) = {
 
   assert(SEW == 32);
 
-  let vs2_val = read_vreg(num_elem, SEW, LMUL_pow, vs2);
-  let vd_val  = read_vreg(num_elem, SEW, LMUL_pow, vd);
-
   let eg_len   = (unsigned(vl) / 4);
   let eg_start = (unsigned(vstart) / 4);
 
   foreach (i from eg_start to (eg_len - 1)) {
     assert(i * 4 + 3 < num_elem);
 
-    let state = get_velem_quad(vd_val, i);
-    let rkey : bits(128) = match funct6 {
-      ZVK_VAESEM_VV => get_velem_quad(vs2_val, i),
-      ZVK_VAESEM_VS => get_velem_quad(vs2_val, 0),
+    let rkey_i : nat = match funct6 {
+      ZVK_VAESEM_VV => i,
+      ZVK_VAESEM_VS => 0,
     };
+    let state : bits(128) =
+      read_single_element(32, i * 4 + 3, vd) @
+      read_single_element(32, i * 4 + 2, vd) @
+      read_single_element(32, i * 4 + 1, vd) @
+      read_single_element(32, i * 4 + 0, vd);
+    let rkey : bits(128) =
+      read_single_element(32, rkey_i * 4 + 3, vs2) @
+      read_single_element(32, rkey_i * 4 + 2, vs2) @
+      read_single_element(32, rkey_i * 4 + 1, vs2) @
+      read_single_element(32, rkey_i * 4 + 0, vs2);
     let sb    = aes_subbytes_fwd(state);
     let sr    = aes_shift_rows_fwd(sb);
     let mix   = aes_mixcolumns_fwd(sr);
     let ark   = mix ^ rkey;
 
-    write_velem_quad(vd, SEW, ark, i);
+    write_single_element(32, i * 4 + 0, vd, ark[31 .. 0]);
+    write_single_element(32, i * 4 + 1, vd, ark[63 .. 32]);
+    write_single_element(32, i * 4 + 2, vd, ark[95 .. 64]);
+    write_single_element(32, i * 4 + 3, vd, ark[127 .. 96]);
   };
 
   set_vstart(zeros());
@@ -231,9 +267,6 @@ function clause execute (VAESKF1_VI(vs2, rnd, vd)) = {
 
   assert(SEW == 32);
 
-  let vs2_val = read_vreg(num_elem, SEW, LMUL_pow, vs2);
-  let vd_val  = read_vreg(num_elem, SEW, LMUL_pow, vd);
-
   var rnd_val : bits(5) = rnd;
 
   if (unsigned(rnd_val[3..0]) > 10) | (unsigned(rnd_val[3..0]) == 0)
@@ -241,23 +274,27 @@ function clause execute (VAESKF1_VI(vs2, rnd, vd)) = {
 
   let r : bits(4) = rnd_val[3..0] - 1;
 
-  var w : vector(4, bits(32)) = vector_init(zeros());
-
   let eg_len   = (unsigned(vl) / 4);
   let eg_start = (unsigned(vstart) / 4);
 
   foreach (i from eg_start to (eg_len - 1)) {
     assert(i * 4 + 3 < num_elem);
 
-    let current_round_key = get_velem_quad_vec(vs2_val, i);
+    let current_round_key0 : bits(32) = read_single_element(32, i * 4 + 3, vs2);
+    let current_round_key1 : bits(32) = read_single_element(32, i * 4 + 2, vs2);
+    let current_round_key2 : bits(32) = read_single_element(32, i * 4 + 1, vs2);
+    let current_round_key3 : bits(32) = read_single_element(32, i * 4 + 0, vs2);
 
-    w[0] = aes_subword_fwd(current_round_key[3] >>> 8) ^
-           aes_decode_rcon(r) ^ current_round_key[0];
-    w[1] = w[0] ^ current_round_key[1];
-    w[2] = w[1] ^ current_round_key[2];
-    w[3] = w[2] ^ current_round_key[3];
+    let w0 : bits(32) = aes_subword_fwd(current_round_key3 >>> 8) ^
+                        aes_decode_rcon(r) ^ current_round_key0;
+    let w1 : bits(32) = w0 ^ current_round_key1;
+    let w2 : bits(32) = w1 ^ current_round_key2;
+    let w3 : bits(32) = w2 ^ current_round_key3;
 
-    write_velem_quad_vec(vd, SEW, w, i);
+    write_single_element(32, i * 4 + 0, vd, w0);
+    write_single_element(32, i * 4 + 1, vd, w1);
+    write_single_element(32, i * 4 + 2, vd, w2);
+    write_single_element(32, i * 4 + 3, vd, w3);
   };
 
   set_vstart(zeros());
@@ -280,15 +317,10 @@ function clause execute (VAESKF2_VI(vs2, rnd, vd)) = {
 
   assert(SEW == 32);
 
-  let vs2_val = read_vreg(num_elem, SEW, LMUL_pow, vs2);
-  let vd_val  = read_vreg(num_elem, SEW, LMUL_pow, vd);
-
   var rnd_val : bits(4) = rnd[3..0];
 
   if (unsigned(rnd_val) < 2) | (unsigned(rnd_val) > 14)
   then rnd_val[3] = not_bit(rnd_val[3]);
-
-  var w : vector(4, bits(32)) = vector_init(zeros());
 
   let eg_len   = (unsigned(vl) / 4);
   let eg_start = (unsigned(vstart) / 4);
@@ -296,18 +328,27 @@ function clause execute (VAESKF2_VI(vs2, rnd, vd)) = {
   foreach (i from eg_start to (eg_len - 1)) {
     assert(i * 4 + 3 < num_elem);
 
-    let current_round_key = get_velem_quad_vec(vs2_val, i);
-    let round_key_b       = get_velem_quad_vec(vd_val, i);
+    let current_round_key0 : bits(32) = read_single_element(32, i * 4 + 3, vs2);
+    let current_round_key1 : bits(32) = read_single_element(32, i * 4 + 2, vs2);
+    let current_round_key2 : bits(32) = read_single_element(32, i * 4 + 1, vs2);
+    let current_round_key3 : bits(32) = read_single_element(32, i * 4 + 0, vs2);
+    let round_key_b0       : bits(32) = read_single_element(32, i * 4 + 3, vd);
+    let round_key_b1       : bits(32) = read_single_element(32, i * 4 + 2, vd);
+    let round_key_b2       : bits(32) = read_single_element(32, i * 4 + 1, vd);
+    let round_key_b3       : bits(32) = read_single_element(32, i * 4 + 0, vd);
 
-    w[0] = if (rnd_val[0] == bitone)
-           then aes_subword_fwd(current_round_key[3]) ^ round_key_b[0]
-           else aes_subword_fwd(current_round_key[3] >>> 8) ^
-                aes_decode_rcon((rnd_val >> 1) - 1) ^ round_key_b[0];
-    w[1] = w[0] ^ round_key_b[1];
-    w[2] = w[1] ^ round_key_b[2];
-    w[3] = w[2] ^ round_key_b[3];
+    let w0 : bits(32) = if (rnd_val[0] == bitone)
+                         then aes_subword_fwd(current_round_key3) ^ round_key_b0
+                         else aes_subword_fwd(current_round_key3 >>> 8) ^
+                              aes_decode_rcon((rnd_val >> 1) - 1) ^ round_key_b0;
+    let w1 : bits(32) = w0 ^ round_key_b1;
+    let w2 : bits(32) = w1 ^ round_key_b2;
+    let w3 : bits(32) = w2 ^ round_key_b3;
 
-    write_velem_quad_vec(vd, SEW, w, i)
+    write_single_element(32, i * 4 + 0, vd, w0);
+    write_single_element(32, i * 4 + 1, vd, w1);
+    write_single_element(32, i * 4 + 2, vd, w2);
+    write_single_element(32, i * 4 + 3, vd, w3)
   };
 
   set_vstart(zeros());
@@ -330,20 +371,25 @@ function clause execute (VAESZ_VS(vs2, vd)) = {
 
   assert(SEW == 32);
 
-  let vs2_val = read_vreg(num_elem, SEW, LMUL_pow, vs2);
-  let vd_val  = read_vreg(num_elem, SEW, LMUL_pow, vd);
-
   let eg_len   = (unsigned(vl) / 4);
   let eg_start = (unsigned(vstart) / 4);
 
   foreach (i from eg_start to (eg_len - 1)) {
     assert(i * 4 + 3 < num_elem);
 
-    let state = get_velem_quad(vd_val, i);
-    let rkey  = get_velem_quad(vs2_val, 0);
-    let ark   = state ^ rkey;
+    let state0 : bits(32) = read_single_element(32, i * 4 + 0, vd);
+    let state1 : bits(32) = read_single_element(32, i * 4 + 1, vd);
+    let state2 : bits(32) = read_single_element(32, i * 4 + 2, vd);
+    let state3 : bits(32) = read_single_element(32, i * 4 + 3, vd);
+    let rkey0  : bits(32) = read_single_element(32, 0, vs2);
+    let rkey1  : bits(32) = read_single_element(32, 1, vs2);
+    let rkey2  : bits(32) = read_single_element(32, 2, vs2);
+    let rkey3  : bits(32) = read_single_element(32, 3, vs2);
 
-    write_velem_quad(vd, SEW, ark, i)
+    write_single_element(32, i * 4 + 0, vd, state0 ^ rkey0);
+    write_single_element(32, i * 4 + 1, vd, state1 ^ rkey1);
+    write_single_element(32, i * 4 + 2, vd, state2 ^ rkey2);
+    write_single_element(32, i * 4 + 3, vd, state3 ^ rkey3)
   };
 
   set_vstart(zeros());

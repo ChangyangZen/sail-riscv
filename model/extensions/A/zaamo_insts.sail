@@ -52,6 +52,81 @@ mapping clause encdec = AMO(op, aq, rl, rs2, rs1, size, rd)
   <-> encdec_amoop(op) @ bool_bits(aq) @ bool_bits(rl) @ encdec_reg(rs2) @ encdec_reg(rs1) @ width_enc_wide(size) @ encdec_reg(rd) @ 0b0101111
   when amo_encoding_valid(size, op, rs2, rd)
 
+function amo_compute_8(op : amoop, rs2_val : bits(8), loaded : bits(8)) -> bits(8) = {
+  match op {
+    AMOSWAP => rs2_val,
+    AMOADD  => rs2_val + loaded,
+    AMOXOR  => rs2_val ^ loaded,
+    AMOAND  => rs2_val & loaded,
+    AMOOR   => rs2_val | loaded,
+    AMOMIN  => if rs2_val <_s loaded then rs2_val else loaded,
+    AMOMAX  => if rs2_val >_s loaded then rs2_val else loaded,
+    AMOMINU => if rs2_val <_u loaded then rs2_val else loaded,
+    AMOMAXU => if rs2_val >_u loaded then rs2_val else loaded,
+    AMOCAS  => rs2_val,
+  }
+}
+
+function amo_compute_16(op : amoop, rs2_val : bits(16), loaded : bits(16)) -> bits(16) = {
+  match op {
+    AMOSWAP => rs2_val,
+    AMOADD  => rs2_val + loaded,
+    AMOXOR  => rs2_val ^ loaded,
+    AMOAND  => rs2_val & loaded,
+    AMOOR   => rs2_val | loaded,
+    AMOMIN  => if rs2_val <_s loaded then rs2_val else loaded,
+    AMOMAX  => if rs2_val >_s loaded then rs2_val else loaded,
+    AMOMINU => if rs2_val <_u loaded then rs2_val else loaded,
+    AMOMAXU => if rs2_val >_u loaded then rs2_val else loaded,
+    AMOCAS  => rs2_val,
+  }
+}
+
+function amo_compute_32(op : amoop, rs2_val : bits(32), loaded : bits(32)) -> bits(32) = {
+  match op {
+    AMOSWAP => rs2_val,
+    AMOADD  => rs2_val + loaded,
+    AMOXOR  => rs2_val ^ loaded,
+    AMOAND  => rs2_val & loaded,
+    AMOOR   => rs2_val | loaded,
+    AMOMIN  => if rs2_val <_s loaded then rs2_val else loaded,
+    AMOMAX  => if rs2_val >_s loaded then rs2_val else loaded,
+    AMOMINU => if rs2_val <_u loaded then rs2_val else loaded,
+    AMOMAXU => if rs2_val >_u loaded then rs2_val else loaded,
+    AMOCAS  => rs2_val,
+  }
+}
+
+function amo_compute_64(op : amoop, rs2_val : bits(64), loaded : bits(64)) -> bits(64) = {
+  match op {
+    AMOSWAP => rs2_val,
+    AMOADD  => rs2_val + loaded,
+    AMOXOR  => rs2_val ^ loaded,
+    AMOAND  => rs2_val & loaded,
+    AMOOR   => rs2_val | loaded,
+    AMOMIN  => if rs2_val <_s loaded then rs2_val else loaded,
+    AMOMAX  => if rs2_val >_s loaded then rs2_val else loaded,
+    AMOMINU => if rs2_val <_u loaded then rs2_val else loaded,
+    AMOMAXU => if rs2_val >_u loaded then rs2_val else loaded,
+    AMOCAS  => rs2_val,
+  }
+}
+
+function amo_compute_128(op : amoop, rs2_val : bits(128), loaded : bits(128)) -> bits(128) = {
+  match op {
+    AMOSWAP => rs2_val,
+    AMOADD  => rs2_val + loaded,
+    AMOXOR  => rs2_val ^ loaded,
+    AMOAND  => rs2_val & loaded,
+    AMOOR   => rs2_val | loaded,
+    AMOMIN  => if rs2_val <_s loaded then rs2_val else loaded,
+    AMOMAX  => if rs2_val >_s loaded then rs2_val else loaded,
+    AMOMINU => if rs2_val <_u loaded then rs2_val else loaded,
+    AMOMAXU => if rs2_val >_u loaded then rs2_val else loaded,
+    AMOCAS  => rs2_val,
+  }
+}
+
 // NOTE: Currently, we only EA if address translation is successful.
 // This may need revisiting.
 $[split op]
@@ -74,50 +149,161 @@ function clause execute AMO(op, aq, rl, rs2, rs1, width, rd) = {
           // AMOCAS.D for RV32 and AMOCAS.Q for RV64 operate on a pair of
           // registers. When the first register of a register pair is
           // x0, then both halves of the pair read/write as zero.
-          let rs2_val : bits('width * 8) = if width <= xlen_bytes then trunc(X(rs2)) else trunc(X_pair(rs2));
-          match mem_write_ea(addr, width, aq & rl, rl, true) {
-            Err(e) => Memory_Exception(vaddr, e),
-            Ok(_) => {
-              match mem_read(ReadWrite(Data, Data), addr, width, aq, aq & rl, true) {
-                Err(e)     => Memory_Exception(vaddr, e),
+          if width == 1 then {
+            let rs2_val : bits(8) = X(rs2)[7 .. 0];
+            match mem_write_ea(addr, 1, aq & rl, rl, true) {
+              Err(e) => Memory_Exception(vaddr, e),
+              Ok(_) => match mem_read(ReadWrite(Data, Data), addr, 1, aq, aq & rl, true) {
+                Err(e) => Memory_Exception(vaddr, e),
                 Ok(loaded) => {
-                  let result : bits('width * 8) =
-                    match op {
-                      AMOSWAP => rs2_val,
-                      AMOADD  => rs2_val + loaded,
-                      AMOXOR  => rs2_val ^ loaded,
-                      AMOAND  => rs2_val & loaded,
-                      AMOOR   => rs2_val | loaded,
-                      AMOMIN  => if rs2_val <_s loaded then rs2_val else loaded,
-                      AMOMAX  => if rs2_val >_s loaded then rs2_val else loaded,
-                      AMOMINU => if rs2_val <_u loaded then rs2_val else loaded,
-                      AMOMAXU => if rs2_val >_u loaded then rs2_val else loaded,
-                      // If it *does* store a value, CAS always stores rs2.
-                      AMOCAS  => rs2_val,
-                    };
-
-                  // All operations except CAS where loaded != X(rd) write their value back.
-                  if op == AMOCAS & loaded != (if width <= xlen_bytes then trunc(X(rd)) else trunc(X_pair(rd))) then {
-                    // Compared, but didn't swap.
-                    if width <= xlen_bytes
-                    then X(rd) = sign_extend(loaded)
-                    else X_pair(rd) = sign_extend(loaded);
+                  let loaded : bits(8) = loaded;
+                  let result : bits(8) = amo_compute_8(op, rs2_val, loaded);
+                  if op == AMOCAS & loaded != X(rd)[7 .. 0] then {
+                    X(rd) = sign_extend(loaded);
                     RETIRE_SUCCESS
                   } else {
-                    match mem_write_value(addr, width, sign_extend(result), aq & rl, rl, true) {
-                      Ok(true)  => {
-                        if width <= xlen_bytes
-                        then X(rd) = sign_extend(loaded)
-                        else X_pair(rd) = sign_extend(loaded);
+                    match mem_write_value(addr, 1, result, aq & rl, rl, true) {
+                      Ok(true) => {
+                        X(rd) = sign_extend(loaded);
                         RETIRE_SUCCESS
                       },
                       Ok(false) => { internal_error(__FILE__, __LINE__, "AMO got false from mem_write_value") },
-                      Err(e)    => Memory_Exception(vaddr, e),
+                      Err(e) => Memory_Exception(vaddr, e),
                     }
                   }
                 }
               }
             }
+          } else if width == 2 then {
+            let rs2_val : bits(16) = X(rs2)[15 .. 0];
+            match mem_write_ea(addr, 2, aq & rl, rl, true) {
+              Err(e) => Memory_Exception(vaddr, e),
+              Ok(_) => match mem_read(ReadWrite(Data, Data), addr, 2, aq, aq & rl, true) {
+                Err(e) => Memory_Exception(vaddr, e),
+                Ok(loaded) => {
+                  let loaded : bits(16) = loaded;
+                  let result : bits(16) = amo_compute_16(op, rs2_val, loaded);
+                  if op == AMOCAS & loaded != X(rd)[15 .. 0] then {
+                    X(rd) = sign_extend(loaded);
+                    RETIRE_SUCCESS
+                  } else {
+                    match mem_write_value(addr, 2, result, aq & rl, rl, true) {
+                      Ok(true) => {
+                        X(rd) = sign_extend(loaded);
+                        RETIRE_SUCCESS
+                      },
+                      Ok(false) => { internal_error(__FILE__, __LINE__, "AMO got false from mem_write_value") },
+                      Err(e) => Memory_Exception(vaddr, e),
+                    }
+                  }
+                }
+              }
+            }
+          } else if width == 4 then {
+            let rs2_val : bits(32) = X(rs2)[31 .. 0];
+            match mem_write_ea(addr, 4, aq & rl, rl, true) {
+              Err(e) => Memory_Exception(vaddr, e),
+              Ok(_) => match mem_read(ReadWrite(Data, Data), addr, 4, aq, aq & rl, true) {
+                Err(e) => Memory_Exception(vaddr, e),
+                Ok(loaded) => {
+                  let loaded : bits(32) = loaded;
+                  let result : bits(32) = amo_compute_32(op, rs2_val, loaded);
+                  if op == AMOCAS & loaded != X(rd)[31 .. 0] then {
+                    X(rd) = sign_extend(loaded);
+                    RETIRE_SUCCESS
+                  } else {
+                    match mem_write_value(addr, 4, result, aq & rl, rl, true) {
+                      Ok(true) => {
+                        X(rd) = sign_extend(loaded);
+                        RETIRE_SUCCESS
+                      },
+                      Ok(false) => { internal_error(__FILE__, __LINE__, "AMO got false from mem_write_value") },
+                      Err(e) => Memory_Exception(vaddr, e),
+                    }
+                  }
+                }
+              }
+            }
+          } else if width == 8 then {
+            if xlen == 64 then {
+              let rs2_val : bits(64) = X(rs2);
+              match mem_write_ea(addr, 8, aq & rl, rl, true) {
+                Err(e) => Memory_Exception(vaddr, e),
+                Ok(_) => match mem_read(ReadWrite(Data, Data), addr, 8, aq, aq & rl, true) {
+                  Err(e) => Memory_Exception(vaddr, e),
+                  Ok(loaded) => {
+                    let loaded : bits(64) = loaded;
+                    let result : bits(64) = amo_compute_64(op, rs2_val, loaded);
+                    if op == AMOCAS & loaded != X(rd) then {
+                      X(rd) = sign_extend(loaded);
+                      RETIRE_SUCCESS
+                    } else {
+                      match mem_write_value(addr, 8, result, aq & rl, rl, true) {
+                        Ok(true) => {
+                          X(rd) = sign_extend(loaded);
+                          RETIRE_SUCCESS
+                        },
+                        Ok(false) => { internal_error(__FILE__, __LINE__, "AMO got false from mem_write_value") },
+                        Err(e) => Memory_Exception(vaddr, e),
+                      }
+                    }
+                  }
+                }
+              }
+            } else {
+              let rs2_val : bits(64) = X_pair(rs2);
+              match mem_write_ea(addr, 8, aq & rl, rl, true) {
+                Err(e) => Memory_Exception(vaddr, e),
+                Ok(_) => match mem_read(ReadWrite(Data, Data), addr, 8, aq, aq & rl, true) {
+                  Err(e) => Memory_Exception(vaddr, e),
+                  Ok(loaded) => {
+                    let loaded : bits(64) = loaded;
+                    let result : bits(64) = amo_compute_64(op, rs2_val, loaded);
+                    if op == AMOCAS & loaded != X_pair(rd) then {
+                      X_pair(rd) = sign_extend(loaded);
+                      RETIRE_SUCCESS
+                    } else {
+                      match mem_write_value(addr, 8, result, aq & rl, rl, true) {
+                        Ok(true) => {
+                          X_pair(rd) = sign_extend(loaded);
+                          RETIRE_SUCCESS
+                        },
+                        Ok(false) => { internal_error(__FILE__, __LINE__, "AMO got false from mem_write_value") },
+                        Err(e) => Memory_Exception(vaddr, e),
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          } else if width == 16 then {
+            assert(xlen == 64);
+            let rs2_val : bits(128) = X_pair(rs2);
+            match mem_write_ea(addr, 16, aq & rl, rl, true) {
+              Err(e) => Memory_Exception(vaddr, e),
+              Ok(_) => match mem_read(ReadWrite(Data, Data), addr, 16, aq, aq & rl, true) {
+                Err(e) => Memory_Exception(vaddr, e),
+                Ok(loaded) => {
+                  let loaded : bits(128) = loaded;
+                  let result : bits(128) = amo_compute_128(op, rs2_val, loaded);
+                  if op == AMOCAS & loaded != X_pair(rd) then {
+                    X_pair(rd) = sign_extend(loaded);
+                    RETIRE_SUCCESS
+                  } else {
+                    match mem_write_value(addr, 16, result, aq & rl, rl, true) {
+                      Ok(true) => {
+                        X_pair(rd) = sign_extend(loaded);
+                        RETIRE_SUCCESS
+                      },
+                      Ok(false) => { internal_error(__FILE__, __LINE__, "AMO got false from mem_write_value") },
+                      Err(e) => Memory_Exception(vaddr, e),
+                    }
+                  }
+                }
+              }
+            }
+          } else {
+            Illegal_Instruction()
           }
         }
       }

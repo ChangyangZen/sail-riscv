@@ -38,12 +38,26 @@ function clause execute(LOADRES(aq, rl, rs1, width, rd)) = {
   // This is checked during decoding.
   assert(width <= xlen_bytes);
 
-  match vmem_read(rs1, zeros(), width, Read(Data), aq, aq & rl, true) {
-    Ok(data) => {
-      X(rd) = sign_extend(data);
-      RETIRE_SUCCESS
-    },
-    Err(e) => e,
+  if width == 4 then {
+    match vmem_read(rs1, zeros(), 4, Read(Data), aq, aq & rl, true) {
+      Ok(data) => {
+        let data : bits(32) = data;
+        X(rd) = sign_extend(data);
+        RETIRE_SUCCESS
+      },
+      Err(e) => e,
+    }
+  } else if width == 8 then {
+    match vmem_read(rs1, zeros(), 8, Read(Data), aq, aq & rl, true) {
+      Ok(data) => {
+        let data : bits(64) = data;
+        X(rd) = sign_extend(data);
+        RETIRE_SUCCESS
+      },
+      Err(e) => e,
+    }
+  } else {
+    Illegal_Instruction()
   }
 }
 
@@ -65,14 +79,28 @@ function clause execute (STORECON(aq, rl, rs2, rs1, width, rd)) = {
 
   // normal non-rmem case
   // RMEM: SC is allowed to succeed (but might fail later)
-  let data = X(rs2)[width * 8 - 1 .. 0];
-  match vmem_write(rs1, zeros(), width, data, Write(Data), aq & rl, rl, true) {
-    Ok(b) => {
-      X(rd) = zero_extend(bool_bits(~(b)));
-      cancel_reservation();
-      RETIRE_SUCCESS
-    },
-    Err(e) => e,
+  if width == 4 then {
+    let data : bits(32) = X(rs2)[31 .. 0];
+    match vmem_write(rs1, zeros(), 4, data, Write(Data), aq & rl, rl, true) {
+      Ok(b) => {
+        X(rd) = zero_extend(bool_bits(~(b)));
+        cancel_reservation();
+        RETIRE_SUCCESS
+      },
+      Err(e) => e,
+    }
+  } else if width == 8 then {
+    let data : bits(64) = X(rs2);
+    match vmem_write(rs1, zeros(), 8, data, Write(Data), aq & rl, rl, true) {
+      Ok(b) => {
+        X(rd) = zero_extend(bool_bits(~(b)));
+        cancel_reservation();
+        RETIRE_SUCCESS
+      },
+      Err(e) => e,
+    }
+  } else {
+    Illegal_Instruction()
   }
 }
 

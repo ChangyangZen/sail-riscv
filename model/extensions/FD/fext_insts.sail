@@ -293,9 +293,35 @@ function clause execute(LOAD_FP(imm, rs1, rd, width)) = {
   assert(width <= flen_bytes);
 
   let offset : xlenbits = sign_extend(imm);
-  match vmem_read(rs1, offset, width, Read(Data), false, false, false) {
-    Ok(result) => { F(rd) = nan_box(result); RETIRE_SUCCESS },
-    Err(e)     => e,
+  if width == 2 then {
+    match vmem_read(rs1, offset, 2, Read(Data), false, false, false) {
+      Ok(result) => {
+        let data : bits(16) = result;
+        F(rd) = nan_box(data);
+        RETIRE_SUCCESS
+      },
+      Err(e) => e,
+    }
+  } else if width == 4 then {
+    match vmem_read(rs1, offset, 4, Read(Data), false, false, false) {
+      Ok(result) => {
+        let data : bits(32) = result;
+        F(rd) = nan_box(data);
+        RETIRE_SUCCESS
+      },
+      Err(e) => e,
+    }
+  } else if width == 8 then {
+    match vmem_read(rs1, offset, 8, Read(Data), false, false, false) {
+      Ok(result) => {
+        let data : bits(64) = result;
+        F(rd) = nan_box(data);
+        RETIRE_SUCCESS
+      },
+      Err(e) => e,
+    }
+  } else {
+    Illegal_Instruction()
   }
 }
 
@@ -328,11 +354,29 @@ function clause execute (STORE_FP(imm, rs2, rs1, width)) = {
   assert(width <= flen_bytes);
 
   let offset : xlenbits = sign_extend(imm);
-  let data = F(rs2)[width * 8 - 1 ..  0];
-  match vmem_write(rs1, offset, width, data, Write(Data), false, false, false) {
-    Ok(true)  => RETIRE_SUCCESS,
-    Ok(false) => internal_error(__FILE__, __LINE__, "store got false from vmem_write"),
-    Err(e)    => e,
+  if width == 2 then {
+    let data : bits(16) = F(rs2)[15 .. 0];
+    match vmem_write(rs1, offset, 2, data, Write(Data), false, false, false) {
+      Ok(true)  => RETIRE_SUCCESS,
+      Ok(false) => internal_error(__FILE__, __LINE__, "store got false from vmem_write"),
+      Err(e)    => e,
+    }
+  } else if width == 4 then {
+    let data : bits(32) = F(rs2)[31 .. 0];
+    match vmem_write(rs1, offset, 4, data, Write(Data), false, false, false) {
+      Ok(true)  => RETIRE_SUCCESS,
+      Ok(false) => internal_error(__FILE__, __LINE__, "store got false from vmem_write"),
+      Err(e)    => e,
+    }
+  } else if width == 8 then {
+    let data : bits(64) = F(rs2);
+    match vmem_write(rs1, offset, 8, data, Write(Data), false, false, false) {
+      Ok(true)  => RETIRE_SUCCESS,
+      Ok(false) => internal_error(__FILE__, __LINE__, "store got false from vmem_write"),
+      Err(e)    => e,
+    }
+  } else {
+    Illegal_Instruction()
   }
 }
 

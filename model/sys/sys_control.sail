@@ -233,7 +233,7 @@ function exception_handler(cur_priv : Privilege, ctl : ctl_result,
       then mstatus[MPRV] = 0b0;
 
       if   hartSupports(Ext_Zicfilp)
-      then zicfilp_restore_elp_on_xret(mRET, cur_privilege);
+      then zicfilp_restore_elp_on_xret(XRET_M, cur_privilege);
 
       long_csr_write_callback("mstatus", "mstatush", mstatus.bits);
 
@@ -252,7 +252,7 @@ function exception_handler(cur_priv : Privilege, ctl : ctl_result,
       then mstatus[MPRV] = 0b0;
 
       if   hartSupports(Ext_Zicfilp)
-      then zicfilp_restore_elp_on_xret(sRET, cur_privilege);
+      then zicfilp_restore_elp_on_xret(XRET_S, cur_privilege);
 
       long_csr_write_callback("mstatus", "mstatush", mstatus.bits);
 

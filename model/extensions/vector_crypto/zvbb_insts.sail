@@ -23,25 +23,55 @@ function clause execute (VANDN_VV(vm, vs1, vs2, vd)) = {
   let LMUL_pow = get_lmul_pow();
   let num_elem = get_num_elem(LMUL_pow, SEW);
 
-  let 'n = num_elem;
-  let 'm = SEW;
-
-  let vm_val  : bits('n) = read_vmask(num_elem, vm, zvreg);
-  let vs1_val : vector('n, bits('m)) = read_vreg(num_elem, SEW, LMUL_pow, vs1);
-  let vs2_val : vector('n, bits('m)) = read_vreg(num_elem, SEW, LMUL_pow, vs2);
-  let vd_val  : vector('n, bits('m)) = read_vreg(num_elem, SEW, LMUL_pow, vd);
-
-  let (initial_result, mask) : (vector('n, bits('m)), bits('n)) = match init_masked_result(num_elem, SEW, LMUL_pow, vd_val, vm_val) {
-    Ok(v)   => v,
-    Err(()) => return Illegal_Instruction()
+  if SEW == 8 then {
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs1_val : bits(8) = read_single_element(8, i, vs1);
+        let vs2_val : bits(8) = read_single_element(8, i, vs2);
+        write_single_element(8, i, vd, ~(vs1_val) & vs2_val)
+      }
+    }
+  } else if SEW == 16 then {
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs1_val : bits(16) = read_single_element(16, i, vs1);
+        let vs2_val : bits(16) = read_single_element(16, i, vs2);
+        write_single_element(16, i, vd, ~(vs1_val) & vs2_val)
+      }
+    }
+  } else if SEW == 32 then {
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs1_val : bits(32) = read_single_element(32, i, vs1);
+        let vs2_val : bits(32) = read_single_element(32, i, vs2);
+        write_single_element(32, i, vd, ~(vs1_val) & vs2_val)
+      }
+    }
+  } else {
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs1_val : bits(64) = read_single_element(64, i, vs1);
+        let vs2_val : bits(64) = read_single_element(64, i, vs2);
+        write_single_element(64, i, vd, ~(vs1_val) & vs2_val)
+      }
+    }
   };
-  var result = initial_result;
-
-  foreach (i from 0 to (num_elem - 1)) {
-    if mask[i] == bitone then
-      result[i] = ~(vs1_val[i]) & vs2_val[i];
-  };
-  write_vreg(num_elem, SEW, LMUL_pow, vd, result);
   set_vstart(zeros());
   RETIRE_SUCCESS
 }
@@ -60,25 +90,55 @@ function clause execute (VANDN_VX(vm, vs2, rs1, vd)) = {
   let LMUL_pow = get_lmul_pow();
   let num_elem = get_num_elem(LMUL_pow, SEW);
 
-  let 'n = num_elem;
-  let 'm = SEW;
-
-  let vm_val  : bits('n) = read_vmask(num_elem, vm, zvreg);
-  let rs1_val : bits('m) = get_scalar(rs1, SEW);
-  let vs2_val : vector('n, bits('m)) = read_vreg(num_elem, SEW, LMUL_pow, vs2);
-  let vd_val  : vector('n, bits('m)) = read_vreg(num_elem, SEW, LMUL_pow, vd);
-
-  let (initial_result, mask) : (vector('n, bits('m)), bits('n)) = match init_masked_result(num_elem, SEW, LMUL_pow, vd_val, vm_val) {
-    Ok(v)   => v,
-    Err(()) => return Illegal_Instruction()
+  if SEW == 8 then {
+    let rs1_val : bits(8) = get_scalar(rs1, 8);
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(8) = read_single_element(8, i, vs2);
+        write_single_element(8, i, vd, ~(rs1_val) & vs2_val)
+      }
+    }
+  } else if SEW == 16 then {
+    let rs1_val : bits(16) = get_scalar(rs1, 16);
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(16) = read_single_element(16, i, vs2);
+        write_single_element(16, i, vd, ~(rs1_val) & vs2_val)
+      }
+    }
+  } else if SEW == 32 then {
+    let rs1_val : bits(32) = get_scalar(rs1, 32);
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(32) = read_single_element(32, i, vs2);
+        write_single_element(32, i, vd, ~(rs1_val) & vs2_val)
+      }
+    }
+  } else {
+    let rs1_val : bits(64) = get_scalar(rs1, 64);
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(64) = read_single_element(64, i, vs2);
+        write_single_element(64, i, vd, ~(rs1_val) & vs2_val)
+      }
+    }
   };
-  var result = initial_result;
-
-  foreach (i from 0 to (num_elem- 1)) {
-    if mask[i] == bitone then
-      result[i] = ~(rs1_val) & vs2_val[i];
-  };
-  write_vreg(num_elem, SEW, LMUL_pow, vd, result);
   set_vstart(zeros());
   RETIRE_SUCCESS
 }
@@ -97,28 +157,51 @@ function clause execute (VBREV_V(vm, vs2, vd)) = {
   let LMUL_pow = get_lmul_pow();
   let num_elem = get_num_elem(LMUL_pow, SEW);
 
-  let 'n = num_elem;
-  let 'm = SEW;
-
-  let vm_val  : bits('n) = read_vmask(num_elem, vm, zvreg);
-  let vs2_val : vector('n, bits('m)) = read_vreg(num_elem, SEW, LMUL_pow, vs2);
-  let vd_val  : vector('n, bits('m)) = read_vreg(num_elem, SEW, LMUL_pow, vd);
-
-  let (initial_result, mask) : (vector('n, bits('m)), bits('n)) = match init_masked_result(num_elem, SEW, LMUL_pow, vd_val, vm_val) {
-    Ok(v)   => v,
-    Err(()) => return Illegal_Instruction()
+  if SEW == 8 then {
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(8) = read_single_element(8, i, vs2);
+        write_single_element(8, i, vd, reverse_bits(vs2_val))
+      }
+    }
+  } else if SEW == 16 then {
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(16) = read_single_element(16, i, vs2);
+        write_single_element(16, i, vd, reverse_bits(vs2_val))
+      }
+    }
+  } else if SEW == 32 then {
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(32) = read_single_element(32, i, vs2);
+        write_single_element(32, i, vd, reverse_bits(vs2_val))
+      }
+    }
+  } else {
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(64) = read_single_element(64, i, vs2);
+        write_single_element(64, i, vd, reverse_bits(vs2_val))
+      }
+    }
   };
-  var result = initial_result;
-
-  foreach (i from 0 to (num_elem - 1)) {
-    if mask[i] == bitone then {
-      var output : bits('m) = zeros();
-      foreach (j from 0 to (SEW - 1))
-        output[SEW - 1 - j] = vs2_val[i][j];
-      result[i] = output;
-    };
-  };
-  write_vreg(num_elem, SEW, LMUL_pow, vd, result);
   set_vstart(zeros());
   RETIRE_SUCCESS
 }
@@ -137,25 +220,51 @@ function clause execute (VBREV8_V(vm, vs2, vd)) = {
   let LMUL_pow = get_lmul_pow();
   let num_elem = get_num_elem(LMUL_pow, SEW);
 
-  let 'n = num_elem;
-  let 'm = SEW;
-
-  let vm_val  : bits('n)= read_vmask(num_elem, vm, zvreg);
-  let vs2_val : vector('n, bits('m)) = read_vreg(num_elem, SEW, LMUL_pow, vs2);
-  let vd_val  : vector('n, bits('m)) = read_vreg(num_elem, SEW, LMUL_pow, vd);
-
-  let (initial_result, mask) : (vector('n, bits('m)), bits('n)) = match init_masked_result(num_elem, SEW, LMUL_pow, vd_val, vm_val) {
-    Ok(v)   => v,
-    Err(()) => return Illegal_Instruction()
+  if SEW == 8 then {
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(8) = read_single_element(8, i, vs2);
+        write_single_element(8, i, vd, brev8(vs2_val))
+      }
+    }
+  } else if SEW == 16 then {
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(16) = read_single_element(16, i, vs2);
+        write_single_element(16, i, vd, brev8(vs2_val))
+      }
+    }
+  } else if SEW == 32 then {
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(32) = read_single_element(32, i, vs2);
+        write_single_element(32, i, vd, brev8(vs2_val))
+      }
+    }
+  } else {
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(64) = read_single_element(64, i, vs2);
+        write_single_element(64, i, vd, brev8(vs2_val))
+      }
+    }
   };
-  var result = initial_result;
-
-  foreach (i from 0 to (num_elem - 1)) {
-    if mask[i] == bitone then {
-      result[i] = brev8(vs2_val[i]);
-    };
-  };
-  write_vreg(num_elem, SEW, LMUL_pow, vd, result);
   set_vstart(zeros());
   RETIRE_SUCCESS
 }
@@ -174,25 +283,51 @@ function clause execute (VREV8_V(vm, vs2, vd)) = {
   let LMUL_pow = get_lmul_pow();
   let num_elem = get_num_elem(LMUL_pow, SEW);
 
-  let 'n = num_elem;
-  let 'm = SEW;
-
-  let vm_val  : bits('n) = read_vmask(num_elem, vm, zvreg);
-  let vs2_val : vector('n, bits('m)) = read_vreg(num_elem, SEW, LMUL_pow, vs2);
-  let vd_val  : vector('n, bits('m)) = read_vreg(num_elem, SEW, LMUL_pow, vd);
-
-  let (initial_result, mask) : (vector('n, bits('m)), bits('n)) = match init_masked_result(num_elem, SEW, LMUL_pow, vd_val, vm_val) {
-    Ok(v)   => v,
-    Err(()) => return Illegal_Instruction()
+  if SEW == 8 then {
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(8) = read_single_element(8, i, vs2);
+        write_single_element(8, i, vd, rev8(vs2_val))
+      }
+    }
+  } else if SEW == 16 then {
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(16) = read_single_element(16, i, vs2);
+        write_single_element(16, i, vd, rev8(vs2_val))
+      }
+    }
+  } else if SEW == 32 then {
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(32) = read_single_element(32, i, vs2);
+        write_single_element(32, i, vd, rev8(vs2_val))
+      }
+    }
+  } else {
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(64) = read_single_element(64, i, vs2);
+        write_single_element(64, i, vd, rev8(vs2_val))
+      }
+    }
   };
-  var result = initial_result;
-
-  foreach (i from 0 to (num_elem - 1)) {
-    if mask[i] == bitone then {
-      result[i] = rev8(vs2_val[i]);
-    };
-  };
-  write_vreg(num_elem, SEW, LMUL_pow, vd, result);
   set_vstart(zeros());
   RETIRE_SUCCESS
 }
@@ -211,26 +346,55 @@ function clause execute (VCLZ_V(vm, vs2, vd)) = {
   let LMUL_pow = get_lmul_pow();
   let num_elem = get_num_elem(LMUL_pow, SEW);
 
-  let 'n = num_elem;
-  let 'm = SEW;
-
-  let vm_val  : bits('n) = read_vmask(num_elem, vm, zvreg);
-  let vs2_val : vector('n, bits('m)) = read_vreg(num_elem, SEW, LMUL_pow, vs2);
-  let vd_val  : vector('n, bits('m)) = read_vreg(num_elem, SEW, LMUL_pow, vd);
-
-  let (initial_result, mask) : (vector('n, bits('m)), bits('n)) = match init_masked_result(num_elem, SEW, LMUL_pow, vd_val, vm_val) {
-    Ok(v)   => v,
-    Err(()) => return Illegal_Instruction()
+  if SEW == 8 then {
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(8) = read_single_element(8, i, vs2);
+        let result  : bits(8) = to_bits(count_leading_zeros(vs2_val));
+        write_single_element(8, i, vd, result)
+      }
+    }
+  } else if SEW == 16 then {
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(16) = read_single_element(16, i, vs2);
+        let result  : bits(16) = to_bits(count_leading_zeros(vs2_val));
+        write_single_element(16, i, vd, result)
+      }
+    }
+  } else if SEW == 32 then {
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(32) = read_single_element(32, i, vs2);
+        let result  : bits(32) = to_bits(count_leading_zeros(vs2_val));
+        write_single_element(32, i, vd, result)
+      }
+    }
+  } else {
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(64) = read_single_element(64, i, vs2);
+        let result  : bits(64) = to_bits(count_leading_zeros(vs2_val));
+        write_single_element(64, i, vd, result)
+      }
+    }
   };
-  var result = initial_result;
-
-  foreach (i from 0 to (num_elem - 1)) {
-    if mask[i] == bitone then {
-      let clz = count_leading_zeros(vs2_val[i]);
-      result[i] = to_bits(clz);
-    };
-  };
-  write_vreg(num_elem, SEW, LMUL_pow, vd, result);
   set_vstart(zeros());
   RETIRE_SUCCESS
 }
@@ -249,26 +413,55 @@ function clause execute (VCTZ_V(vm, vs2, vd)) = {
   let LMUL_pow = get_lmul_pow();
   let num_elem = get_num_elem(LMUL_pow, SEW);
 
-  let 'n = num_elem;
-  let 'm = SEW;
-
-  let vm_val  : bits('n) = read_vmask(num_elem, vm, zvreg);
-  let vs2_val : vector('n, bits('m)) = read_vreg(num_elem, SEW, LMUL_pow, vs2);
-  let vd_val  : vector('n, bits('m)) = read_vreg(num_elem, SEW, LMUL_pow, vd);
-
-  let (initial_result, mask) : (vector('n, bits('m)), bits('n)) = match init_masked_result(num_elem, SEW, LMUL_pow, vd_val, vm_val) {
-    Ok(v)   => v,
-    Err(()) => return Illegal_Instruction()
+  if SEW == 8 then {
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(8) = read_single_element(8, i, vs2);
+        let result  : bits(8) = to_bits(count_trailing_zeros(vs2_val));
+        write_single_element(8, i, vd, result)
+      }
+    }
+  } else if SEW == 16 then {
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(16) = read_single_element(16, i, vs2);
+        let result  : bits(16) = to_bits(count_trailing_zeros(vs2_val));
+        write_single_element(16, i, vd, result)
+      }
+    }
+  } else if SEW == 32 then {
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(32) = read_single_element(32, i, vs2);
+        let result  : bits(32) = to_bits(count_trailing_zeros(vs2_val));
+        write_single_element(32, i, vd, result)
+      }
+    }
+  } else {
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(64) = read_single_element(64, i, vs2);
+        let result  : bits(64) = to_bits(count_trailing_zeros(vs2_val));
+        write_single_element(64, i, vd, result)
+      }
+    }
   };
-  var result = initial_result;
-
-  foreach (i from 0 to (num_elem - 1)) {
-    if mask[i] == bitone then {
-      let ctz = count_trailing_zeros(vs2_val[i]);
-      result[i] = to_bits(ctz);
-    };
-  };
-  write_vreg(num_elem, SEW, LMUL_pow, vd, result);
   set_vstart(zeros());
   RETIRE_SUCCESS
 }
@@ -287,29 +480,55 @@ function clause execute (VCPOP_V(vm, vs2, vd)) = {
   let LMUL_pow = get_lmul_pow();
   let num_elem = get_num_elem(LMUL_pow, SEW);
 
-  let 'n = num_elem;
-  let 'm = SEW;
-
-  let vm_val  : bits('n) = read_vmask(num_elem, vm, zvreg);
-  let vs2_val : vector('n, bits('m)) = read_vreg(num_elem, SEW, LMUL_pow, vs2);
-  let vd_val  : vector('n, bits('m)) = read_vreg(num_elem, SEW, LMUL_pow, vd);
-
-  let (initial_result, mask) : (vector('n, bits('m)), bits('n)) = match init_masked_result(num_elem, SEW, LMUL_pow, vd_val, vm_val) {
-    Ok(v)   => v,
-    Err(()) => return Illegal_Instruction()
-  };
-  var result = initial_result;
-
-  foreach (i from 0 to (num_elem - 1)) {
-    if mask[i] == bitone then {
-      foreach (j from 0 to (SEW - 1)) {
-        if vs2_val[i][j] == bitone then {
-          result[i] = result[i] + 1;
-        };
+  if SEW == 8 then {
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(8) = read_single_element(8, i, vs2);
+        let result  : bits(8) = to_bits(count_ones(vs2_val));
+        write_single_element(8, i, vd, result)
       }
-    };
+    }
+  } else if SEW == 16 then {
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(16) = read_single_element(16, i, vs2);
+        let result  : bits(16) = to_bits(count_ones(vs2_val));
+        write_single_element(16, i, vd, result)
+      }
+    }
+  } else if SEW == 32 then {
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(32) = read_single_element(32, i, vs2);
+        let result  : bits(32) = to_bits(count_ones(vs2_val));
+        write_single_element(32, i, vd, result)
+      }
+    }
+  } else {
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(64) = read_single_element(64, i, vs2);
+        let result  : bits(64) = to_bits(count_ones(vs2_val));
+        write_single_element(64, i, vd, result)
+      }
+    }
   };
-  write_vreg(num_elem, SEW, LMUL_pow, vd, result);
   set_vstart(zeros());
   RETIRE_SUCCESS
 }
@@ -324,30 +543,59 @@ mapping clause assembly = VROL_VV(vm, vs1, vs2, vd)
  <-> "vrol.vv" ^ spc() ^ vreg_name(vd) ^ sep() ^ vreg_name(vs2) ^ sep() ^ vreg_name(vs1) ^ maybe_vmask(vm)
 
 function clause execute (VROL_VV(vm, vs1, vs2, vd)) = {
-  let SEW_pow  = get_sew_pow();
-  let SEW      = 2 ^ SEW_pow;
+  let SEW      = get_sew();
   let LMUL_pow = get_lmul_pow();
   let num_elem = get_num_elem(LMUL_pow, SEW);
 
-  let 'n = num_elem;
-  let 'm = SEW;
-
-  let vm_val  : bits('n) = read_vmask(num_elem, vm, zvreg);
-  let vs1_val : vector('n, bits('m)) = read_vreg(num_elem, SEW, LMUL_pow, vs1);
-  let vs2_val : vector('n, bits('m)) = read_vreg(num_elem, SEW, LMUL_pow, vs2);
-  let vd_val  : vector('n, bits('m)) = read_vreg(num_elem, SEW, LMUL_pow, vd);
-
-  let (initial_result, mask) : (vector('n, bits('m)), bits('n)) = match init_masked_result(num_elem, SEW, LMUL_pow, vd_val, vm_val) {
-    Ok(v)   => v,
-    Err(()) => return Illegal_Instruction()
+  if SEW == 8 then {
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs1_val : bits(8) = read_single_element(8, i, vs1);
+        let vs2_val : bits(8) = read_single_element(8, i, vs2);
+        write_single_element(8, i, vd, vs2_val <<< vs1_val[2 .. 0])
+      }
+    }
+  } else if SEW == 16 then {
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs1_val : bits(16) = read_single_element(16, i, vs1);
+        let vs2_val : bits(16) = read_single_element(16, i, vs2);
+        write_single_element(16, i, vd, vs2_val <<< vs1_val[3 .. 0])
+      }
+    }
+  } else if SEW == 32 then {
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs1_val : bits(32) = read_single_element(32, i, vs1);
+        let vs2_val : bits(32) = read_single_element(32, i, vs2);
+        write_single_element(32, i, vd, vs2_val <<< vs1_val[4 .. 0])
+      }
+    }
+  } else {
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs1_val : bits(64) = read_single_element(64, i, vs1);
+        let vs2_val : bits(64) = read_single_element(64, i, vs2);
+        write_single_element(64, i, vd, vs2_val <<< vs1_val[5 .. 0])
+      }
+    }
   };
-  var result = initial_result;
-
-  foreach (i from 0 to (num_elem - 1)) {
-    if mask[i] == bitone then
-      result[i] = vs2_val[i] <<< vs1_val[i][SEW_pow - 1 .. 0];
-  };
-  write_vreg(num_elem, SEW, LMUL_pow, vd, result);
   set_vstart(zeros());
   RETIRE_SUCCESS
 }
@@ -362,30 +610,59 @@ mapping clause assembly = VROL_VX(vm, vs2, rs1, vd)
  <-> "vrol.vx" ^ spc() ^ vreg_name(vd) ^ sep() ^ vreg_name(vs2) ^ sep() ^ reg_name(rs1) ^ maybe_vmask(vm)
 
 function clause execute (VROL_VX(vm, vs2, rs1, vd)) = {
-  let SEW_pow  = get_sew_pow();
-  let SEW      = 2 ^ SEW_pow;
+  let SEW      = get_sew();
   let LMUL_pow = get_lmul_pow();
   let num_elem = get_num_elem(LMUL_pow, SEW);
 
-  let 'n = num_elem;
-  let 'm = SEW;
-
-  let vm_val  : bits('n) = read_vmask(num_elem, vm, zvreg);
-  let rs1_val : bits('m) = get_scalar(rs1, SEW);
-  let vs2_val : vector('n, bits('m)) = read_vreg(num_elem, SEW, LMUL_pow, vs2);
-  let vd_val  : vector('n, bits('m)) = read_vreg(num_elem, SEW, LMUL_pow, vd);
-
-  let (initial_result, mask) : (vector('n, bits('m)), bits('n)) = match init_masked_result(num_elem, SEW, LMUL_pow, vd_val, vm_val) {
-    Ok(v)   => v,
-    Err(()) => return Illegal_Instruction()
+  if SEW == 8 then {
+    let rs1_val : bits(8) = get_scalar(rs1, 8);
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(8) = read_single_element(8, i, vs2);
+        write_single_element(8, i, vd, vs2_val <<< rs1_val[2 .. 0])
+      }
+    }
+  } else if SEW == 16 then {
+    let rs1_val : bits(16) = get_scalar(rs1, 16);
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(16) = read_single_element(16, i, vs2);
+        write_single_element(16, i, vd, vs2_val <<< rs1_val[3 .. 0])
+      }
+    }
+  } else if SEW == 32 then {
+    let rs1_val : bits(32) = get_scalar(rs1, 32);
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(32) = read_single_element(32, i, vs2);
+        write_single_element(32, i, vd, vs2_val <<< rs1_val[4 .. 0])
+      }
+    }
+  } else {
+    let rs1_val : bits(64) = get_scalar(rs1, 64);
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(64) = read_single_element(64, i, vs2);
+        write_single_element(64, i, vd, vs2_val <<< rs1_val[5 .. 0])
+      }
+    }
   };
-  var result = initial_result;
-
-  foreach (i from 0 to (num_elem - 1)) {
-    if mask[i] == bitone then
-      result[i] = vs2_val[i] <<< rs1_val[SEW_pow - 1 .. 0];
-  };
-  write_vreg(num_elem, SEW, LMUL_pow, vd, result);
   set_vstart(zeros());
   RETIRE_SUCCESS
 }
@@ -400,30 +677,59 @@ mapping clause assembly = VROR_VV(vm, vs1, vs2, vd)
  <-> "vror.vv" ^ spc() ^ vreg_name(vd) ^ sep() ^ vreg_name(vs2) ^ sep() ^ vreg_name(vs1) ^ maybe_vmask(vm)
 
 function clause execute (VROR_VV(vm, vs1, vs2, vd)) = {
-  let SEW_pow  = get_sew_pow();
-  let SEW      = 2 ^ SEW_pow;
+  let SEW      = get_sew();
   let LMUL_pow = get_lmul_pow();
   let num_elem = get_num_elem(LMUL_pow, SEW);
 
-  let 'n = num_elem;
-  let 'm = SEW;
-
-  let vm_val  : bits('n) = read_vmask(num_elem, vm, zvreg);
-  let vs1_val : vector('n, bits('m)) = read_vreg(num_elem, SEW, LMUL_pow, vs1);
-  let vs2_val : vector('n, bits('m)) = read_vreg(num_elem, SEW, LMUL_pow, vs2);
-  let vd_val  : vector('n, bits('m)) = read_vreg(num_elem, SEW, LMUL_pow, vd);
-
-  let (initial_result, mask) : (vector('n, bits('m)), bits('n)) = match init_masked_result(num_elem, SEW, LMUL_pow, vd_val, vm_val) {
-    Ok(v)   => v,
-    Err(()) => return Illegal_Instruction()
+  if SEW == 8 then {
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs1_val : bits(8) = read_single_element(8, i, vs1);
+        let vs2_val : bits(8) = read_single_element(8, i, vs2);
+        write_single_element(8, i, vd, vs2_val >>> vs1_val[2 .. 0])
+      }
+    }
+  } else if SEW == 16 then {
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs1_val : bits(16) = read_single_element(16, i, vs1);
+        let vs2_val : bits(16) = read_single_element(16, i, vs2);
+        write_single_element(16, i, vd, vs2_val >>> vs1_val[3 .. 0])
+      }
+    }
+  } else if SEW == 32 then {
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs1_val : bits(32) = read_single_element(32, i, vs1);
+        let vs2_val : bits(32) = read_single_element(32, i, vs2);
+        write_single_element(32, i, vd, vs2_val >>> vs1_val[4 .. 0])
+      }
+    }
+  } else {
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs1_val : bits(64) = read_single_element(64, i, vs1);
+        let vs2_val : bits(64) = read_single_element(64, i, vs2);
+        write_single_element(64, i, vd, vs2_val >>> vs1_val[5 .. 0])
+      }
+    }
   };
-  var result = initial_result;
-
-  foreach (i from 0 to (num_elem - 1)) {
-    if mask[i] == bitone then
-      result[i] = vs2_val[i] >>> vs1_val[i][SEW_pow - 1 .. 0];
-  };
-  write_vreg(num_elem, SEW, LMUL_pow, vd, result);
   set_vstart(zeros());
   RETIRE_SUCCESS
 }
@@ -438,30 +744,59 @@ mapping clause assembly = VROR_VX(vm, vs2, rs1, vd)
  <-> "vror.vx" ^ spc() ^ vreg_name(vd) ^ sep() ^ vreg_name(vs2) ^ sep() ^ reg_name(rs1)^ maybe_vmask(vm)
 
 function clause execute (VROR_VX(vm, vs2, rs1, vd)) = {
-  let SEW_pow  = get_sew_pow();
-  let SEW      = 2 ^ SEW_pow;
+  let SEW      = get_sew();
   let LMUL_pow = get_lmul_pow();
   let num_elem = get_num_elem(LMUL_pow, SEW);
 
-  let 'n = num_elem;
-  let 'm = SEW;
-
-  let vm_val  : bits('n) = read_vmask(num_elem, vm, zvreg);
-  let rs1_val : bits('m) = get_scalar(rs1, SEW);
-  let vs2_val : vector('n, bits('m)) = read_vreg(num_elem, SEW, LMUL_pow, vs2);
-  let vd_val  : vector('n, bits('m)) = read_vreg(num_elem, SEW, LMUL_pow, vd);
-
-  let (initial_result, mask) : (vector('n, bits('m)), bits('n)) = match init_masked_result(num_elem, SEW, LMUL_pow, vd_val, vm_val) {
-    Ok(v)   => v,
-    Err(()) => return Illegal_Instruction()
+  if SEW == 8 then {
+    let rs1_val : bits(8) = get_scalar(rs1, 8);
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(8) = read_single_element(8, i, vs2);
+        write_single_element(8, i, vd, vs2_val >>> rs1_val[2 .. 0])
+      }
+    }
+  } else if SEW == 16 then {
+    let rs1_val : bits(16) = get_scalar(rs1, 16);
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(16) = read_single_element(16, i, vs2);
+        write_single_element(16, i, vd, vs2_val >>> rs1_val[3 .. 0])
+      }
+    }
+  } else if SEW == 32 then {
+    let rs1_val : bits(32) = get_scalar(rs1, 32);
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(32) = read_single_element(32, i, vs2);
+        write_single_element(32, i, vd, vs2_val >>> rs1_val[4 .. 0])
+      }
+    }
+  } else {
+    let rs1_val : bits(64) = get_scalar(rs1, 64);
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(64) = read_single_element(64, i, vs2);
+        write_single_element(64, i, vd, vs2_val >>> rs1_val[5 .. 0])
+      }
+    }
   };
-  var result = initial_result;
-
-  foreach (i from 0 to (num_elem - 1)) {
-    if mask[i] == bitone then
-      result[i] = vs2_val[i] >>> rs1_val[SEW_pow - 1 .. 0];
-  };
-  write_vreg(num_elem, SEW, LMUL_pow, vd, result);
   set_vstart(zeros());
   RETIRE_SUCCESS
 }
@@ -476,30 +811,55 @@ mapping clause assembly = VROR_VI(vm, vs2, uimm, vd)
  <-> "vror.vi" ^ spc() ^ vreg_name(vd) ^ sep() ^ vreg_name(vs2) ^ sep() ^ hex_bits_6(uimm) ^ maybe_vmask(vm)
 
 function clause execute (VROR_VI(vm, vs2, uimm, vd)) = {
-  let SEW_pow  = get_sew_pow();
-  let SEW      = 2 ^ SEW_pow;
+  let SEW      = get_sew();
   let LMUL_pow = get_lmul_pow();
   let num_elem = get_num_elem(LMUL_pow, SEW);
 
-  let 'n = num_elem;
-  let 'm = SEW;
-
-  let vm_val   : bits('n) = read_vmask(num_elem, vm, zvreg);
-  let uimm_val : bits('m) = zero_extend(uimm);
-  let vs2_val  : vector('n, bits('m)) = read_vreg(num_elem, SEW, LMUL_pow, vs2);
-  let vd_val   : vector('n, bits('m)) = read_vreg(num_elem, SEW, LMUL_pow, vd);
-
-  let (initial_result, mask) : (vector('n, bits('m)), bits('n)) = match init_masked_result(num_elem, SEW, LMUL_pow, vd_val, vm_val) {
-    Ok(v)   => v,
-    Err(()) => return Illegal_Instruction()
+  if SEW == 8 then {
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(8) = read_single_element(8, i, vs2);
+        write_single_element(8, i, vd, vs2_val >>> uimm[2 .. 0])
+      }
+    }
+  } else if SEW == 16 then {
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(16) = read_single_element(16, i, vs2);
+        write_single_element(16, i, vd, vs2_val >>> uimm[3 .. 0])
+      }
+    }
+  } else if SEW == 32 then {
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(32) = read_single_element(32, i, vs2);
+        write_single_element(32, i, vd, vs2_val >>> uimm[4 .. 0])
+      }
+    }
+  } else {
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(64) = read_single_element(64, i, vs2);
+        write_single_element(64, i, vd, vs2_val >>> uimm[5 .. 0])
+      }
+    }
   };
-  var result = initial_result;
-
-  foreach (i from 0 to (num_elem - 1)) {
-    if mask[i] == bitone then
-      result[i] = vs2_val[i] >>> uimm_val[SEW_pow - 1 .. 0];
-  };
-  write_vreg(num_elem, SEW, LMUL_pow, vd, result);
   set_vstart(zeros());
   RETIRE_SUCCESS
 }
@@ -527,30 +887,51 @@ function clause execute (VWSLL_VV(vm, vs2, vs1, vd)) = {
 
   assert(SEW_widen <= 64);
 
-  let 'n = num_elem;
-  let 'm = SEW;
-  let 'o = SEW_widen;
+  assert(num_elem <= vlen);
 
-  let vm_val      : bits('n) = read_vmask(num_elem, vm, zvreg);
-  let vs1_val_vec : vector('n, bits('m)) = read_vreg(num_elem, SEW, LMUL_pow, vs1);
-  let vs2_val_vec : vector('n, bits('m)) = read_vreg(num_elem, SEW, LMUL_pow, vs2);
-  let vd_val      : vector('n, bits('o)) = read_vreg(num_elem, SEW_widen, LMUL_pow_widen, vd);
-
-  let SEW_widen_bits = to_bits_unsafe(SEW_widen, 'o);
-  let (initial_result, mask) : (vector('n, bits('o)), bits('n)) = match init_masked_result(num_elem, SEW_widen, LMUL_pow_widen, vd_val, vm_val) {
-    Ok(v)   => v,
-    Err(()) => return Illegal_Instruction()
+  if SEW == 8 then {
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow_widen, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(16) = zero_extend(read_single_element(8, i, vs2));
+        let vs1_val : bits(16) = zero_extend(read_single_element(8, i, vs1));
+        let shamt   : bits(16) = vs1_val & to_bits_unsafe(16, 15);
+        let result  : bits(16) = vs2_val << shamt;
+        write_single_element(16, i, vd, result)
+      }
+    }
+  } else if SEW == 16 then {
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow_widen, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(32) = zero_extend(read_single_element(16, i, vs2));
+        let vs1_val : bits(32) = zero_extend(read_single_element(16, i, vs1));
+        let shamt   : bits(32) = vs1_val & to_bits_unsafe(32, 31);
+        let result  : bits(32) = vs2_val << shamt;
+        write_single_element(32, i, vd, result)
+      }
+    }
+  } else {
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow_widen, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(64) = zero_extend(read_single_element(32, i, vs2));
+        let vs1_val : bits(64) = zero_extend(read_single_element(32, i, vs1));
+        let shamt   : bits(64) = vs1_val & to_bits_unsafe(64, 63);
+        let result  : bits(64) = vs2_val << shamt;
+        write_single_element(64, i, vd, result)
+      }
+    }
   };
-  var result = initial_result;
-
-  foreach (i from 0 to (num_elem - 1)) {
-    if mask[i] == bitone then {
-      let vs1_val : bits('o) = zero_extend(vs1_val_vec[i]);
-      let vs2_val : bits('o) = zero_extend(vs2_val_vec[i]);
-      result[i] = vs2_val << (vs1_val & zero_extend(SEW_widen_bits - 1));
-    };
-  };
-  write_vreg(num_elem, SEW_widen, LMUL_pow_widen, vd, result);
   set_vstart(zeros());
   RETIRE_SUCCESS
 }
@@ -577,29 +958,46 @@ function clause execute (VWSLL_VX(vm, vs2, rs1, vd)) = {
 
   assert(SEW_widen <= 64);
 
-  let 'n = num_elem;
-  let 'm = SEW;
-  let 'o = SEW_widen;
-
-  let vm_val      : bits('n) = read_vmask(num_elem, vm, zvreg);
-  let rs1_val     : bits('o) = zero_extend(get_scalar(rs1, SEW));
-  let vs2_val_vec : vector('n, bits('m)) = read_vreg(num_elem, SEW, LMUL_pow, vs2);
-  let vd_val      : vector('n, bits('o)) = read_vreg(num_elem, SEW_widen, LMUL_pow_widen, vd);
-
-  let SEW_widen_bits = to_bits_unsafe(SEW_widen, 'o);
-  let (initial_result, mask) : (vector('n, bits('o)), bits('n)) = match init_masked_result(num_elem, SEW_widen, LMUL_pow_widen, vd_val, vm_val) {
-    Ok(v)   => v,
-    Err(()) => return Illegal_Instruction()
+  if SEW == 8 then {
+    let rs1_val : bits(16) = zero_extend(get_scalar(rs1, 8));
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow_widen, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(16) = zero_extend(read_single_element(8, i, vs2));
+        let result : bits(16) = vs2_val << (rs1_val & to_bits_unsafe(16, 15));
+        write_single_element(16, i, vd, result)
+      }
+    }
+  } else if SEW == 16 then {
+    let rs1_val : bits(32) = zero_extend(get_scalar(rs1, 16));
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow_widen, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(32) = zero_extend(read_single_element(16, i, vs2));
+        let result : bits(32) = vs2_val << (rs1_val & to_bits_unsafe(32, 31));
+        write_single_element(32, i, vd, result)
+      }
+    }
+  } else {
+    let rs1_val : bits(64) = zero_extend(get_scalar(rs1, 32));
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow_widen, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(64) = zero_extend(read_single_element(32, i, vs2));
+        let result : bits(64) = vs2_val << (rs1_val & to_bits_unsafe(64, 63));
+        write_single_element(64, i, vd, result)
+      }
+    }
   };
-  var result = initial_result;
-
-  foreach (i from 0 to (num_elem - 1)) {
-    if mask[i] == bitone then {
-      let vs2_val : bits('o) = zero_extend(vs2_val_vec[i]);
-      result[i] = vs2_val << (rs1_val & zero_extend(SEW_widen_bits - 1));
-    };
-  };
-  write_vreg(num_elem, SEW_widen, LMUL_pow_widen, vd, result);
   set_vstart(zeros());
   RETIRE_SUCCESS
 }
@@ -626,29 +1024,48 @@ function clause execute (VWSLL_VI(vm, vs2, uimm, vd)) = {
 
   assert(SEW_widen <= 64);
 
-  let 'n = num_elem;
-  let 'm = SEW;
-  let 'o = SEW_widen;
+  assert(num_elem <= vlen);
 
-  let vm_val      : bits('n) = read_vmask(num_elem, vm, zvreg);
-  let uimm_val    : bits('o) = zero_extend(uimm);
-  let vs2_val_vec : vector('n, bits('m)) = read_vreg(num_elem, SEW, LMUL_pow, vs2);
-  let vd_val      : vector('n, bits('o)) = read_vreg(num_elem, SEW_widen, LMUL_pow_widen, vd);
-
-  let SEW_widen_bits = to_bits_unsafe(SEW_widen, 'o);
-  let (initial_result, mask) : (vector('n, bits('o)), bits('n)) = match init_masked_result(num_elem, SEW_widen, LMUL_pow_widen, vd_val, vm_val) {
-    Ok(v)   => v,
-    Err(()) => return Illegal_Instruction()
+  if SEW == 8 then {
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow_widen, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(16) = zero_extend(read_single_element(8, i, vs2));
+        let shamt   : bits(16) = to_bits_unsafe(16, unsigned(uimm)) & to_bits_unsafe(16, 15);
+        let result  : bits(16) = vs2_val << shamt;
+        write_single_element(16, i, vd, result)
+      }
+    }
+  } else if SEW == 16 then {
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow_widen, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(32) = zero_extend(read_single_element(16, i, vs2));
+        let shamt   : bits(32) = to_bits_unsafe(32, unsigned(uimm)) & to_bits_unsafe(32, 31);
+        let result  : bits(32) = vs2_val << shamt;
+        write_single_element(32, i, vd, result)
+      }
+    }
+  } else {
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow_widen, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(64) = zero_extend(read_single_element(32, i, vs2));
+        let shamt   : bits(64) = to_bits_unsafe(64, unsigned(uimm)) & to_bits_unsafe(64, 63);
+        let result  : bits(64) = vs2_val << shamt;
+        write_single_element(64, i, vd, result)
+      }
+    }
   };
-  var result = initial_result;
-
-  foreach (i from 0 to (num_elem - 1)) {
-    if mask[i] == bitone then {
-        let vs2_val : bits('o) = zero_extend(vs2_val_vec[i]);
-        result[i] = vs2_val << (uimm_val & zero_extend(SEW_widen_bits - 1));
-    };
-  };
-  write_vreg(num_elem, SEW_widen, LMUL_pow_widen, vd, result);
   set_vstart(zeros());
   RETIRE_SUCCESS
 }

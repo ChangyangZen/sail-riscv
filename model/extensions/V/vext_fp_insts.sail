@@ -40,37 +40,77 @@ function clause execute(FVVTYPE(funct6, vm, vs2, vs1, vd)) = {
   if illegal_fp_normal(vd, vm, SEW, rm_3b) then return Illegal_Instruction();
   assert(SEW != 8);
 
-  let 'n = num_elem;
-  let 'm = SEW;
-
-  let vm_val  : bits('n)            = read_vmask(num_elem, vm, zvreg);
-  let vs1_val : vector('n, bits('m)) = read_vreg(num_elem, SEW, LMUL_pow, vs1);
-  let vs2_val : vector('n, bits('m)) = read_vreg(num_elem, SEW, LMUL_pow, vs2);
-  let vd_val  : vector('n, bits('m)) = read_vreg(num_elem, SEW, LMUL_pow, vd);
-
-  let (initial_result, mask) : (vector('n, bits('m)), bits('n)) = match init_masked_result(num_elem, SEW, LMUL_pow, vd_val, vm_val) {
-    Ok(v)   => v,
-    Err(()) => return Illegal_Instruction()
-  };
-  var result = initial_result;
-
-  foreach (i from 0 to (num_elem - 1)) {
-    if mask[i] == bitone then {
-      result[i] = match funct6 {
-        FVV_VADD     => fp_add(rm_3b, vs2_val[i], vs1_val[i]),
-        FVV_VSUB     => fp_sub(rm_3b, vs2_val[i], vs1_val[i]),
-        FVV_VMIN     => fp_min(vs2_val[i], vs1_val[i]),
-        FVV_VMAX     => fp_max(vs2_val[i], vs1_val[i]),
-        FVV_VMUL     => fp_mul(rm_3b, vs2_val[i], vs1_val[i]),
-        FVV_VDIV     => fp_div(rm_3b, vs2_val[i], vs1_val[i]),
-        FVV_VSGNJ    => [vs1_val[i]['m - 1]] @ vs2_val[i][('m - 2)..0],
-        FVV_VSGNJN   => (0b1 ^ [vs1_val[i]['m - 1]]) @ vs2_val[i][('m - 2)..0],
-        FVV_VSGNJX   => ([vs2_val[i]['m - 1]] ^ [vs1_val[i]['m - 1]]) @ vs2_val[i][('m - 2)..0]
+  if SEW == 16 then {
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs1_val : bits(16) = read_single_element(16, i, vs1);
+        let vs2_val : bits(16) = read_single_element(16, i, vs2);
+        let result : bits(16) = match funct6 {
+          FVV_VADD   => fp_add(rm_3b, vs2_val, vs1_val),
+          FVV_VSUB   => fp_sub(rm_3b, vs2_val, vs1_val),
+          FVV_VMIN   => fp_min(vs2_val, vs1_val),
+          FVV_VMAX   => fp_max(vs2_val, vs1_val),
+          FVV_VMUL   => fp_mul(rm_3b, vs2_val, vs1_val),
+          FVV_VDIV   => fp_div(rm_3b, vs2_val, vs1_val),
+          FVV_VSGNJ  => [vs1_val[15]] @ vs2_val[14 .. 0],
+          FVV_VSGNJN => (0b1 ^ [vs1_val[15]]) @ vs2_val[14 .. 0],
+          FVV_VSGNJX => ([vs2_val[15]] ^ [vs1_val[15]]) @ vs2_val[14 .. 0]
+        };
+        write_single_element(16, i, vd, result)
+      }
+    }
+  } else if SEW == 32 then {
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs1_val : bits(32) = read_single_element(32, i, vs1);
+        let vs2_val : bits(32) = read_single_element(32, i, vs2);
+        let result : bits(32) = match funct6 {
+          FVV_VADD   => fp_add(rm_3b, vs2_val, vs1_val),
+          FVV_VSUB   => fp_sub(rm_3b, vs2_val, vs1_val),
+          FVV_VMIN   => fp_min(vs2_val, vs1_val),
+          FVV_VMAX   => fp_max(vs2_val, vs1_val),
+          FVV_VMUL   => fp_mul(rm_3b, vs2_val, vs1_val),
+          FVV_VDIV   => fp_div(rm_3b, vs2_val, vs1_val),
+          FVV_VSGNJ  => [vs1_val[31]] @ vs2_val[30 .. 0],
+          FVV_VSGNJN => (0b1 ^ [vs1_val[31]]) @ vs2_val[30 .. 0],
+          FVV_VSGNJX => ([vs2_val[31]] ^ [vs1_val[31]]) @ vs2_val[30 .. 0]
+        };
+        write_single_element(32, i, vd, result)
+      }
+    }
+  } else {
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs1_val : bits(64) = read_single_element(64, i, vs1);
+        let vs2_val : bits(64) = read_single_element(64, i, vs2);
+        let result : bits(64) = match funct6 {
+          FVV_VADD   => fp_add(rm_3b, vs2_val, vs1_val),
+          FVV_VSUB   => fp_sub(rm_3b, vs2_val, vs1_val),
+          FVV_VMIN   => fp_min(vs2_val, vs1_val),
+          FVV_VMAX   => fp_max(vs2_val, vs1_val),
+          FVV_VMUL   => fp_mul(rm_3b, vs2_val, vs1_val),
+          FVV_VDIV   => fp_div(rm_3b, vs2_val, vs1_val),
+          FVV_VSGNJ  => [vs1_val[63]] @ vs2_val[62 .. 0],
+          FVV_VSGNJN => (0b1 ^ [vs1_val[63]]) @ vs2_val[62 .. 0],
+          FVV_VSGNJX => ([vs2_val[63]] ^ [vs1_val[63]]) @ vs2_val[62 .. 0]
+        };
+        write_single_element(64, i, vd, result)
       }
     }
   };
 
-  write_vreg(num_elem, SEW, LMUL_pow, vd, result);
   set_vstart(zeros());
   RETIRE_SUCCESS
 }
@@ -118,36 +158,77 @@ function clause execute(FVVMATYPE(funct6, vm, vs2, vs1, vd)) = {
   if illegal_fp_normal(vd, vm, SEW, rm_3b) then return Illegal_Instruction();
   assert(SEW != 8);
 
-  let 'n = num_elem;
-  let 'm = SEW;
-
-  let vm_val  : bits('n)     = read_vmask(num_elem, vm, zvreg);
-  let vs1_val : vector('n, bits('m)) = read_vreg(num_elem, SEW, LMUL_pow, vs1);
-  let vs2_val : vector('n, bits('m)) = read_vreg(num_elem, SEW, LMUL_pow, vs2);
-  let vd_val  : vector('n, bits('m)) = read_vreg(num_elem, SEW, LMUL_pow, vd);
-
-  let (initial_result, mask) : (vector('n, bits('m)), bits('n)) = match init_masked_result(num_elem, SEW, LMUL_pow, vd_val, vm_val) {
-    Ok(v)   => v,
-    Err(()) => return Illegal_Instruction()
-  };
-  var result = initial_result;
-
-  foreach (i from 0 to (num_elem - 1)) {
-    if mask[i] == bitone then {
-      result[i] = match funct6 {
-        FVV_VMACC    => fp_muladd(rm_3b, vs1_val[i], vs2_val[i], vd_val[i]),
-        FVV_VNMACC   => fp_nmulsub(rm_3b, vs1_val[i], vs2_val[i], vd_val[i]),
-        FVV_VMSAC    => fp_mulsub(rm_3b, vs1_val[i], vs2_val[i], vd_val[i]),
-        FVV_VNMSAC   => fp_nmuladd(rm_3b, vs1_val[i], vs2_val[i], vd_val[i]),
-        FVV_VMADD    => fp_muladd(rm_3b, vs1_val[i], vd_val[i], vs2_val[i]),
-        FVV_VNMADD   => fp_nmulsub(rm_3b, vs1_val[i], vd_val[i], vs2_val[i]),
-        FVV_VMSUB    => fp_mulsub(rm_3b, vs1_val[i], vd_val[i], vs2_val[i]),
-        FVV_VNMSUB   => fp_nmuladd(rm_3b, vs1_val[i], vd_val[i], vs2_val[i])
+  if SEW == 16 then {
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs1_val : bits(16) = read_single_element(16, i, vs1);
+        let vs2_val : bits(16) = read_single_element(16, i, vs2);
+        let vd_val : bits(16) = read_single_element(16, i, vd);
+        let result : bits(16) = match funct6 {
+          FVV_VMACC  => fp_muladd(rm_3b, vs1_val, vs2_val, vd_val),
+          FVV_VNMACC => fp_nmulsub(rm_3b, vs1_val, vs2_val, vd_val),
+          FVV_VMSAC  => fp_mulsub(rm_3b, vs1_val, vs2_val, vd_val),
+          FVV_VNMSAC => fp_nmuladd(rm_3b, vs1_val, vs2_val, vd_val),
+          FVV_VMADD  => fp_muladd(rm_3b, vs1_val, vd_val, vs2_val),
+          FVV_VNMADD => fp_nmulsub(rm_3b, vs1_val, vd_val, vs2_val),
+          FVV_VMSUB  => fp_mulsub(rm_3b, vs1_val, vd_val, vs2_val),
+          FVV_VNMSUB => fp_nmuladd(rm_3b, vs1_val, vd_val, vs2_val)
+        };
+        write_single_element(16, i, vd, result)
+      }
+    }
+  } else if SEW == 32 then {
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs1_val : bits(32) = read_single_element(32, i, vs1);
+        let vs2_val : bits(32) = read_single_element(32, i, vs2);
+        let vd_val : bits(32) = read_single_element(32, i, vd);
+        let result : bits(32) = match funct6 {
+          FVV_VMACC  => fp_muladd(rm_3b, vs1_val, vs2_val, vd_val),
+          FVV_VNMACC => fp_nmulsub(rm_3b, vs1_val, vs2_val, vd_val),
+          FVV_VMSAC  => fp_mulsub(rm_3b, vs1_val, vs2_val, vd_val),
+          FVV_VNMSAC => fp_nmuladd(rm_3b, vs1_val, vs2_val, vd_val),
+          FVV_VMADD  => fp_muladd(rm_3b, vs1_val, vd_val, vs2_val),
+          FVV_VNMADD => fp_nmulsub(rm_3b, vs1_val, vd_val, vs2_val),
+          FVV_VMSUB  => fp_mulsub(rm_3b, vs1_val, vd_val, vs2_val),
+          FVV_VNMSUB => fp_nmuladd(rm_3b, vs1_val, vd_val, vs2_val)
+        };
+        write_single_element(32, i, vd, result)
+      }
+    }
+  } else {
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs1_val : bits(64) = read_single_element(64, i, vs1);
+        let vs2_val : bits(64) = read_single_element(64, i, vs2);
+        let vd_val : bits(64) = read_single_element(64, i, vd);
+        let result : bits(64) = match funct6 {
+          FVV_VMACC  => fp_muladd(rm_3b, vs1_val, vs2_val, vd_val),
+          FVV_VNMACC => fp_nmulsub(rm_3b, vs1_val, vs2_val, vd_val),
+          FVV_VMSAC  => fp_mulsub(rm_3b, vs1_val, vs2_val, vd_val),
+          FVV_VNMSAC => fp_nmuladd(rm_3b, vs1_val, vs2_val, vd_val),
+          FVV_VMADD  => fp_muladd(rm_3b, vs1_val, vd_val, vs2_val),
+          FVV_VNMADD => fp_nmulsub(rm_3b, vs1_val, vd_val, vs2_val),
+          FVV_VMSUB  => fp_mulsub(rm_3b, vs1_val, vd_val, vs2_val),
+          FVV_VNMSUB => fp_nmuladd(rm_3b, vs1_val, vd_val, vs2_val)
+        };
+        write_single_element(64, i, vd, result)
       }
     }
   };
 
-  write_vreg(num_elem, SEW, LMUL_pow, vd, result);
   set_vstart(zeros());
   RETIRE_SUCCESS
 }
@@ -193,32 +274,42 @@ function clause execute(FWVVTYPE(funct6, vm, vs2, vs1, vd)) = {
   then return Illegal_Instruction();
   assert(SEW >= 16 & SEW_widen <= 64);
 
-  let 'n = num_elem;
-  let 'm = SEW;
-  let 'o = SEW_widen;
-
-  let vm_val  : bits('n)             = read_vmask(num_elem, vm, zvreg);
-  let vd_val  : vector('n, bits('o)) = read_vreg(num_elem, SEW_widen, LMUL_pow_widen, vd);
-  let vs1_val : vector('n, bits('m)) = read_vreg(num_elem, SEW, LMUL_pow, vs1);
-  let vs2_val : vector('n, bits('m)) = read_vreg(num_elem, SEW, LMUL_pow, vs2);
-
-  let (initial_result, mask) : (vector('n, bits('o)), bits('n)) = match init_masked_result(num_elem, SEW_widen, LMUL_pow_widen, vd_val, vm_val) {
-    Ok(v)   => v,
-    Err(()) => return Illegal_Instruction()
-  };
-  var result = initial_result;
-
-  foreach (i from 0 to (num_elem - 1)) {
-    if mask[i] == bitone then {
-      result[i] = match funct6 {
-        FWVV_VADD    => fp_add(rm_3b, fp_widen(vs2_val[i]), fp_widen(vs1_val[i])),
-        FWVV_VSUB    => fp_sub(rm_3b, fp_widen(vs2_val[i]), fp_widen(vs1_val[i])),
-        FWVV_VMUL    => fp_mul(rm_3b, fp_widen(vs2_val[i]), fp_widen(vs1_val[i]))
+  if SEW == 16 then {
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow_widen, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs1_val : bits(16) = read_single_element(16, i, vs1);
+        let vs2_val : bits(16) = read_single_element(16, i, vs2);
+        let result : bits(32) = match funct6 {
+          FWVV_VADD => fp_add(rm_3b, fp_widen(vs2_val), fp_widen(vs1_val)),
+          FWVV_VSUB => fp_sub(rm_3b, fp_widen(vs2_val), fp_widen(vs1_val)),
+          FWVV_VMUL => fp_mul(rm_3b, fp_widen(vs2_val), fp_widen(vs1_val))
+        };
+        write_single_element(32, i, vd, result)
+      }
+    }
+  } else {
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow_widen, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs1_val : bits(32) = read_single_element(32, i, vs1);
+        let vs2_val : bits(32) = read_single_element(32, i, vs2);
+        let result : bits(64) = match funct6 {
+          FWVV_VADD => fp_add(rm_3b, fp_widen(vs2_val), fp_widen(vs1_val)),
+          FWVV_VSUB => fp_sub(rm_3b, fp_widen(vs2_val), fp_widen(vs1_val)),
+          FWVV_VMUL => fp_mul(rm_3b, fp_widen(vs2_val), fp_widen(vs1_val))
+        };
+        write_single_element(64, i, vd, result)
       }
     }
   };
 
-  write_vreg(num_elem, SEW_widen, LMUL_pow_widen, vd, result);
   set_vstart(zeros());
   RETIRE_SUCCESS
 }
@@ -261,33 +352,46 @@ function clause execute(FWVVMATYPE(funct6, vm, vs1, vs2, vd)) = {
   then return Illegal_Instruction();
   assert(SEW >= 16 & SEW_widen <= 64);
 
-  let 'n = num_elem;
-  let 'm = SEW;
-  let 'o = SEW_widen;
-
-  let vm_val  : bits('n)             = read_vmask(num_elem, vm, zvreg);
-  let vd_val  : vector('n, bits('o)) = read_vreg(num_elem, SEW_widen, LMUL_pow_widen, vd);
-  let vs1_val : vector('n, bits('m)) = read_vreg(num_elem, SEW, LMUL_pow, vs1);
-  let vs2_val : vector('n, bits('m)) = read_vreg(num_elem, SEW, LMUL_pow, vs2);
-
-  let (initial_result, mask) : (vector('n, bits('o)), bits('n)) = match init_masked_result(num_elem, SEW_widen, LMUL_pow_widen, vd_val, vm_val) {
-    Ok(v)   => v,
-    Err(()) => return Illegal_Instruction()
-  };
-  var result = initial_result;
-
-  foreach (i from 0 to (num_elem - 1)) {
-    if mask[i] == bitone then {
-      result[i] = match funct6 {
-        FWVV_VMACC   => fp_muladd(rm_3b, fp_widen(vs1_val[i]), fp_widen(vs2_val[i]), vd_val[i]),
-        FWVV_VNMACC  => fp_nmulsub(rm_3b, fp_widen(vs1_val[i]), fp_widen(vs2_val[i]), vd_val[i]),
-        FWVV_VMSAC   => fp_mulsub(rm_3b, fp_widen(vs1_val[i]), fp_widen(vs2_val[i]), vd_val[i]),
-        FWVV_VNMSAC  => fp_nmuladd(rm_3b, fp_widen(vs1_val[i]), fp_widen(vs2_val[i]), vd_val[i])
+  if SEW == 16 then {
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow_widen, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs1_val : bits(16) = read_single_element(16, i, vs1);
+        let vs2_val : bits(16) = read_single_element(16, i, vs2);
+        let vd_val : bits(32) = read_single_element(32, i, vd);
+        let result : bits(32) = match funct6 {
+          FWVV_VMACC  => fp_muladd(rm_3b, fp_widen(vs1_val), fp_widen(vs2_val), vd_val),
+          FWVV_VNMACC => fp_nmulsub(rm_3b, fp_widen(vs1_val), fp_widen(vs2_val), vd_val),
+          FWVV_VMSAC  => fp_mulsub(rm_3b, fp_widen(vs1_val), fp_widen(vs2_val), vd_val),
+          FWVV_VNMSAC => fp_nmuladd(rm_3b, fp_widen(vs1_val), fp_widen(vs2_val), vd_val)
+        };
+        write_single_element(32, i, vd, result)
+      }
+    }
+  } else {
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow_widen, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs1_val : bits(32) = read_single_element(32, i, vs1);
+        let vs2_val : bits(32) = read_single_element(32, i, vs2);
+        let vd_val : bits(64) = read_single_element(64, i, vd);
+        let result : bits(64) = match funct6 {
+          FWVV_VMACC  => fp_muladd(rm_3b, fp_widen(vs1_val), fp_widen(vs2_val), vd_val),
+          FWVV_VNMACC => fp_nmulsub(rm_3b, fp_widen(vs1_val), fp_widen(vs2_val), vd_val),
+          FWVV_VMSAC  => fp_mulsub(rm_3b, fp_widen(vs1_val), fp_widen(vs2_val), vd_val),
+          FWVV_VNMSAC => fp_nmuladd(rm_3b, fp_widen(vs1_val), fp_widen(vs2_val), vd_val)
+        };
+        write_single_element(64, i, vd, result)
       }
     }
   };
 
-  write_vreg(num_elem, SEW_widen, LMUL_pow_widen, vd, result);
   set_vstart(zeros());
   RETIRE_SUCCESS
 }
@@ -327,31 +431,40 @@ function clause execute(FWVTYPE(funct6, vm, vs2, vs1, vd)) = {
   then return Illegal_Instruction();
   assert(SEW >= 16 & SEW_widen <= 64);
 
-  let 'n = num_elem;
-  let 'm = SEW;
-  let 'o = SEW_widen;
-
-  let vm_val  : bits('n)             = read_vmask(num_elem, vm, zvreg);
-  let vd_val  : vector('n, bits('o)) = read_vreg(num_elem, SEW_widen, LMUL_pow_widen, vd);
-  let vs1_val : vector('n, bits('m)) = read_vreg(num_elem, SEW, LMUL_pow, vs1);
-  let vs2_val : vector('n, bits('o)) = read_vreg(num_elem, SEW_widen, LMUL_pow_widen, vs2);
-
-  let (initial_result, mask) : (vector('n, bits('o)), bits('n)) = match init_masked_result(num_elem, SEW_widen, LMUL_pow_widen, vd_val, vm_val) {
-    Ok(v)   => v,
-    Err(()) => return Illegal_Instruction()
-  };
-  var result = initial_result;
-
-  foreach (i from 0 to (num_elem - 1)) {
-    if mask[i] == bitone then {
-      result[i] = match funct6 {
-        FWV_VADD     => fp_add(rm_3b, vs2_val[i], fp_widen(vs1_val[i])),
-        FWV_VSUB     => fp_sub(rm_3b, vs2_val[i], fp_widen(vs1_val[i]))
+  if SEW == 16 then {
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow_widen, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs1_val : bits(16) = read_single_element(16, i, vs1);
+        let vs2_val : bits(32) = read_single_element(32, i, vs2);
+        let result : bits(32) = match funct6 {
+          FWV_VADD => fp_add(rm_3b, vs2_val, fp_widen(vs1_val)),
+          FWV_VSUB => fp_sub(rm_3b, vs2_val, fp_widen(vs1_val))
+        };
+        write_single_element(32, i, vd, result)
+      }
+    }
+  } else {
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow_widen, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs1_val : bits(32) = read_single_element(32, i, vs1);
+        let vs2_val : bits(64) = read_single_element(64, i, vs2);
+        let result : bits(64) = match funct6 {
+          FWV_VADD => fp_add(rm_3b, vs2_val, fp_widen(vs1_val)),
+          FWV_VSUB => fp_sub(rm_3b, vs2_val, fp_widen(vs1_val))
+        };
+        write_single_element(64, i, vd, result)
       }
     }
   };
 
-  write_vreg(num_elem, SEW_widen, LMUL_pow_widen, vd, result);
   set_vstart(zeros());
   RETIRE_SUCCESS
 }
@@ -389,81 +502,139 @@ function clause execute(VFUNARY0(vm, vs2, vfunary0, vd)) = {
   if illegal_fp_normal(vd, vm, SEW, rm_3b) then return Illegal_Instruction();
   assert(SEW != 8);
 
-  let 'n = num_elem;
-  let 'm = SEW;
-
-  let vm_val  : bits('n)             = read_vmask(num_elem, vm, zvreg);
-  let vs2_val : vector('n, bits('m)) = read_vreg(num_elem, SEW, LMUL_pow, vs2);
-  let vd_val  : vector('n, bits('m)) = read_vreg(num_elem, SEW, LMUL_pow, vd);
-
-  let (initial_result, mask) : (vector('n, bits('m)), bits('n)) = match init_masked_result(num_elem, SEW, LMUL_pow, vd_val, vm_val) {
-    Ok(v)   => v,
-    Err(()) => return Illegal_Instruction()
-  };
-  var result = initial_result;
-
-  foreach (i from 0 to (num_elem - 1)) {
-    if mask[i] == bitone then {
-      result[i] = match vfunary0 {
-        FV_CVT_XU_F      => {
-                              let (fflags, elem) : (bits_fflags, bits('m)) = match 'm {
-                                16 => riscv_f16ToUi16(rm_3b, vs2_val[i]),
-                                32 => riscv_f32ToUi32(rm_3b, vs2_val[i]),
-                                64 => riscv_f64ToUi64(rm_3b, vs2_val[i])
-                              };
-                              accrue_fflags(fflags);
-                              elem
-                            },
-        FV_CVT_X_F       => {
-                              let (fflags, elem) : (bits_fflags, bits('m)) = match 'm {
-                                16 => riscv_f16ToI16(rm_3b, vs2_val[i]),
-                                32 => riscv_f32ToI32(rm_3b, vs2_val[i]),
-                                64 => riscv_f64ToI64(rm_3b, vs2_val[i])
-                              };
-                              accrue_fflags(fflags);
-                              elem
-                            },
-        FV_CVT_F_XU      => {
-                              let (fflags, elem) : (bits_fflags, bits('m)) = match 'm {
-                                16 => riscv_ui32ToF16(rm_3b, zero_extend(vs2_val[i])),
-                                32 => riscv_ui32ToF32(rm_3b, vs2_val[i]),
-                                64 => riscv_ui64ToF64(rm_3b, vs2_val[i])
-                              };
-                              accrue_fflags(fflags);
-                              elem
-                            },
-        FV_CVT_F_X       => {
-                              let (fflags, elem) : (bits_fflags, bits('m)) = match 'm {
-                                16 => riscv_i32ToF16(rm_3b, sign_extend(vs2_val[i])),
-                                32 => riscv_i32ToF32(rm_3b, vs2_val[i]),
-                                64 => riscv_i64ToF64(rm_3b, vs2_val[i])
-                              };
-                              accrue_fflags(fflags);
-                              elem
-                            },
-        FV_CVT_RTZ_XU_F  => {
-                              let (fflags, elem) : (bits_fflags, bits('m)) = match 'm {
-                                16 => riscv_f16ToUi16(0b001, vs2_val[i]),
-                                32 => riscv_f32ToUi32(0b001, vs2_val[i]),
-                                64 => riscv_f64ToUi64(0b001, vs2_val[i])
-                              };
-                              accrue_fflags(fflags);
-                              elem
-                            },
-        FV_CVT_RTZ_X_F   => {
-                              let (fflags, elem) : (bits_fflags, bits('m)) = match 'm {
-                                16 => riscv_f16ToI16(0b001, vs2_val[i]),
-                                32 => riscv_f32ToI32(0b001, vs2_val[i]),
-                                64 => riscv_f64ToI64(0b001, vs2_val[i])
-                              };
-                              accrue_fflags(fflags);
-                              elem
-                            }
+  if SEW == 16 then {
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(16) = read_single_element(16, i, vs2);
+        let result : bits(16) = match vfunary0 {
+          FV_CVT_XU_F     => {
+                               let (fflags, elem) : (bits_fflags, bits(16)) = riscv_f16ToUi16(rm_3b, vs2_val);
+                               accrue_fflags(fflags);
+                               elem
+                             },
+          FV_CVT_X_F      => {
+                               let (fflags, elem) : (bits_fflags, bits(16)) = riscv_f16ToI16(rm_3b, vs2_val);
+                               accrue_fflags(fflags);
+                               elem
+                             },
+          FV_CVT_F_XU     => {
+                               let (fflags, elem) : (bits_fflags, bits(16)) = riscv_ui32ToF16(rm_3b, zero_extend(vs2_val));
+                               accrue_fflags(fflags);
+                               elem
+                             },
+          FV_CVT_F_X      => {
+                               let (fflags, elem) : (bits_fflags, bits(16)) = riscv_i32ToF16(rm_3b, sign_extend(vs2_val));
+                               accrue_fflags(fflags);
+                               elem
+                             },
+          FV_CVT_RTZ_XU_F => {
+                               let (fflags, elem) : (bits_fflags, bits(16)) = riscv_f16ToUi16(0b001, vs2_val);
+                               accrue_fflags(fflags);
+                               elem
+                             },
+          FV_CVT_RTZ_X_F  => {
+                               let (fflags, elem) : (bits_fflags, bits(16)) = riscv_f16ToI16(0b001, vs2_val);
+                               accrue_fflags(fflags);
+                               elem
+                             }
+        };
+        write_single_element(16, i, vd, result)
       }
     }
+  } else if SEW == 32 then {
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(32) = read_single_element(32, i, vs2);
+        let result : bits(32) = match vfunary0 {
+          FV_CVT_XU_F     => {
+                               let (fflags, elem) : (bits_fflags, bits(32)) = riscv_f32ToUi32(rm_3b, vs2_val);
+                               accrue_fflags(fflags);
+                               elem
+                             },
+          FV_CVT_X_F      => {
+                               let (fflags, elem) : (bits_fflags, bits(32)) = riscv_f32ToI32(rm_3b, vs2_val);
+                               accrue_fflags(fflags);
+                               elem
+                             },
+          FV_CVT_F_XU     => {
+                               let (fflags, elem) : (bits_fflags, bits(32)) = riscv_ui32ToF32(rm_3b, vs2_val);
+                               accrue_fflags(fflags);
+                               elem
+                             },
+          FV_CVT_F_X      => {
+                               let (fflags, elem) : (bits_fflags, bits(32)) = riscv_i32ToF32(rm_3b, vs2_val);
+                               accrue_fflags(fflags);
+                               elem
+                             },
+          FV_CVT_RTZ_XU_F => {
+                               let (fflags, elem) : (bits_fflags, bits(32)) = riscv_f32ToUi32(0b001, vs2_val);
+                               accrue_fflags(fflags);
+                               elem
+                             },
+          FV_CVT_RTZ_X_F  => {
+                               let (fflags, elem) : (bits_fflags, bits(32)) = riscv_f32ToI32(0b001, vs2_val);
+                               accrue_fflags(fflags);
+                               elem
+                             }
+        };
+        write_single_element(32, i, vd, result)
+      }
+    }
+  } else if SEW == 64 then {
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(64) = read_single_element(64, i, vs2);
+        let result : bits(64) = match vfunary0 {
+          FV_CVT_XU_F     => {
+                               let (fflags, elem) : (bits_fflags, bits(64)) = riscv_f64ToUi64(rm_3b, vs2_val);
+                               accrue_fflags(fflags);
+                               elem
+                             },
+          FV_CVT_X_F      => {
+                               let (fflags, elem) : (bits_fflags, bits(64)) = riscv_f64ToI64(rm_3b, vs2_val);
+                               accrue_fflags(fflags);
+                               elem
+                             },
+          FV_CVT_F_XU     => {
+                               let (fflags, elem) : (bits_fflags, bits(64)) = riscv_ui64ToF64(rm_3b, vs2_val);
+                               accrue_fflags(fflags);
+                               elem
+                             },
+          FV_CVT_F_X      => {
+                               let (fflags, elem) : (bits_fflags, bits(64)) = riscv_i64ToF64(rm_3b, vs2_val);
+                               accrue_fflags(fflags);
+                               elem
+                             },
+          FV_CVT_RTZ_XU_F => {
+                               let (fflags, elem) : (bits_fflags, bits(64)) = riscv_f64ToUi64(0b001, vs2_val);
+                               accrue_fflags(fflags);
+                               elem
+                             },
+          FV_CVT_RTZ_X_F  => {
+                               let (fflags, elem) : (bits_fflags, bits(64)) = riscv_f64ToI64(0b001, vs2_val);
+                               accrue_fflags(fflags);
+                               elem
+                             }
+        };
+        write_single_element(64, i, vd, result)
+      }
+    }
+  } else {
+    return Illegal_Instruction()
   };
 
-  write_vreg(num_elem, SEW, LMUL_pow, vd, result);
   set_vstart(zeros());
   RETIRE_SUCCESS
 }
@@ -510,91 +681,131 @@ function clause execute(VFWUNARY0(vm, vs2, vfwunary0, vd)) = {
   then return Illegal_Instruction();
   assert(SEW >= 8 & SEW_widen <= 64);
 
-  let 'n = num_elem;
-  let 'm = SEW;
-  let 'o = SEW_widen;
-
-  let vm_val  : bits('n)             = read_vmask(num_elem, vm, zvreg);
-  let vs2_val : vector('n, bits('m)) = read_vreg(num_elem, SEW, LMUL_pow, vs2);
-  let vd_val  : vector('n, bits('o)) = read_vreg(num_elem, SEW_widen, LMUL_pow_widen, vd);
-
-  let (initial_result, mask) : (vector('n, bits('o)), bits('n)) = match init_masked_result(num_elem, SEW_widen, LMUL_pow_widen, vd_val, vm_val) {
-    Ok(v)   => v,
-    Err(()) => return Illegal_Instruction()
-  };
-  var result = initial_result;
-
-  foreach (i from 0 to (num_elem - 1)) {
-    if mask[i] == bitone then {
-      result[i] = match vfwunary0 {
-        FWV_CVT_XU_F     => {
-                              let (fflags, elem) : (bits_fflags, bits('o)) = match 'm {
-                                8  => return Illegal_Instruction(),
-                                16 => riscv_f16ToUi32(rm_3b, vs2_val[i]),
-                                32 => riscv_f32ToUi64(rm_3b, vs2_val[i])
-                              };
-                              accrue_fflags(fflags);
-                              elem
-                            },
-        FWV_CVT_X_F      => {
-                              let (fflags, elem) : (bits_fflags, bits('o)) = match 'm {
-                                8  => return Illegal_Instruction(),
-                                16 => riscv_f16ToI32(rm_3b, vs2_val[i]),
-                                32 => riscv_f32ToI64(rm_3b, vs2_val[i])
-                              };
-                              accrue_fflags(fflags);
-                              elem
-                            },
-        FWV_CVT_F_XU     => {
-                              let (fflags, elem) : (bits_fflags, bits('o)) = match 'm {
-                                8  => riscv_ui32ToF16(rm_3b, zero_extend(vs2_val[i])),
-                                16 => riscv_ui32ToF32(rm_3b, zero_extend(vs2_val[i])),
-                                32 => riscv_ui32ToF64(rm_3b, vs2_val[i])
-                              };
-                              accrue_fflags(fflags);
-                              elem
-                            },
-        FWV_CVT_F_X      => {
-                              let (fflags, elem) : (bits_fflags, bits('o)) = match 'm {
-                                8  => riscv_i32ToF16(rm_3b, sign_extend(vs2_val[i])),
-                                16 => riscv_i32ToF32(rm_3b, sign_extend(vs2_val[i])),
-                                32 => riscv_i32ToF64(rm_3b, vs2_val[i])
-                              };
-                              accrue_fflags(fflags);
-                              elem
-                            },
-        FWV_CVT_F_F      => {
-                              let (fflags, elem) : (bits_fflags, bits('o)) = match 'm {
-                                8  => return Illegal_Instruction(),
-                                16 => riscv_f16ToF32(rm_3b, vs2_val[i]),
-                                32 => riscv_f32ToF64(rm_3b, vs2_val[i])
-                              };
-                              accrue_fflags(fflags);
-                              elem
-                            },
-        FWV_CVT_RTZ_XU_F => {
-                              let (fflags, elem) : (bits_fflags, bits('o)) = match 'm {
-                                8  => return Illegal_Instruction(),
-                                16 => riscv_f16ToUi32(0b001, vs2_val[i]),
-                                32 => riscv_f32ToUi64(0b001, vs2_val[i])
-                              };
-                              accrue_fflags(fflags);
-                              elem
-                            },
-        FWV_CVT_RTZ_X_F  => {
-                              let (fflags, elem) : (bits_fflags, bits('o)) = match 'm {
-                                8  => return Illegal_Instruction(),
-                                16 => riscv_f16ToI32(0b001, vs2_val[i]),
-                                32 => riscv_f32ToI64(0b001, vs2_val[i])
-                              };
-                              accrue_fflags(fflags);
-                              elem
-                            }
+  if SEW == 8 then {
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow_widen, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(8) = read_single_element(8, i, vs2);
+        let result : bits(16) = match vfwunary0 {
+          FWV_CVT_XU_F     => return Illegal_Instruction(),
+          FWV_CVT_X_F      => return Illegal_Instruction(),
+          FWV_CVT_F_XU     => {
+                                let (fflags, elem) : (bits_fflags, bits(16)) = riscv_ui32ToF16(rm_3b, zero_extend(vs2_val));
+                                accrue_fflags(fflags);
+                                elem
+                              },
+          FWV_CVT_F_X      => {
+                                let (fflags, elem) : (bits_fflags, bits(16)) = riscv_i32ToF16(rm_3b, sign_extend(vs2_val));
+                                accrue_fflags(fflags);
+                                elem
+                              },
+          FWV_CVT_F_F      => return Illegal_Instruction(),
+          FWV_CVT_RTZ_XU_F => return Illegal_Instruction(),
+          FWV_CVT_RTZ_X_F  => return Illegal_Instruction()
+        };
+        write_single_element(16, i, vd, result)
+      }
+    }
+  } else if SEW == 16 then {
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow_widen, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(16) = read_single_element(16, i, vs2);
+        let result : bits(32) = match vfwunary0 {
+          FWV_CVT_XU_F     => {
+                                let (fflags, elem) : (bits_fflags, bits(32)) = riscv_f16ToUi32(rm_3b, vs2_val);
+                                accrue_fflags(fflags);
+                                elem
+                              },
+          FWV_CVT_X_F      => {
+                                let (fflags, elem) : (bits_fflags, bits(32)) = riscv_f16ToI32(rm_3b, vs2_val);
+                                accrue_fflags(fflags);
+                                elem
+                              },
+          FWV_CVT_F_XU     => {
+                                let (fflags, elem) : (bits_fflags, bits(32)) = riscv_ui32ToF32(rm_3b, zero_extend(vs2_val));
+                                accrue_fflags(fflags);
+                                elem
+                              },
+          FWV_CVT_F_X      => {
+                                let (fflags, elem) : (bits_fflags, bits(32)) = riscv_i32ToF32(rm_3b, sign_extend(vs2_val));
+                                accrue_fflags(fflags);
+                                elem
+                              },
+          FWV_CVT_F_F      => {
+                                let (fflags, elem) : (bits_fflags, bits(32)) = riscv_f16ToF32(rm_3b, vs2_val);
+                                accrue_fflags(fflags);
+                                elem
+                              },
+          FWV_CVT_RTZ_XU_F => {
+                                let (fflags, elem) : (bits_fflags, bits(32)) = riscv_f16ToUi32(0b001, vs2_val);
+                                accrue_fflags(fflags);
+                                elem
+                              },
+          FWV_CVT_RTZ_X_F  => {
+                                let (fflags, elem) : (bits_fflags, bits(32)) = riscv_f16ToI32(0b001, vs2_val);
+                                accrue_fflags(fflags);
+                                elem
+                              }
+        };
+        write_single_element(32, i, vd, result)
+      }
+    }
+  } else {
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow_widen, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(32) = read_single_element(32, i, vs2);
+        let result : bits(64) = match vfwunary0 {
+          FWV_CVT_XU_F     => {
+                                let (fflags, elem) : (bits_fflags, bits(64)) = riscv_f32ToUi64(rm_3b, vs2_val);
+                                accrue_fflags(fflags);
+                                elem
+                              },
+          FWV_CVT_X_F      => {
+                                let (fflags, elem) : (bits_fflags, bits(64)) = riscv_f32ToI64(rm_3b, vs2_val);
+                                accrue_fflags(fflags);
+                                elem
+                              },
+          FWV_CVT_F_XU     => {
+                                let (fflags, elem) : (bits_fflags, bits(64)) = riscv_ui32ToF64(rm_3b, vs2_val);
+                                accrue_fflags(fflags);
+                                elem
+                              },
+          FWV_CVT_F_X      => {
+                                let (fflags, elem) : (bits_fflags, bits(64)) = riscv_i32ToF64(rm_3b, vs2_val);
+                                accrue_fflags(fflags);
+                                elem
+                              },
+          FWV_CVT_F_F      => {
+                                let (fflags, elem) : (bits_fflags, bits(64)) = riscv_f32ToF64(rm_3b, vs2_val);
+                                accrue_fflags(fflags);
+                                elem
+                              },
+          FWV_CVT_RTZ_XU_F => {
+                                let (fflags, elem) : (bits_fflags, bits(64)) = riscv_f32ToUi64(0b001, vs2_val);
+                                accrue_fflags(fflags);
+                                elem
+                              },
+          FWV_CVT_RTZ_X_F  => {
+                                let (fflags, elem) : (bits_fflags, bits(64)) = riscv_f32ToI64(0b001, vs2_val);
+                                accrue_fflags(fflags);
+                                elem
+                              }
+        };
+        write_single_element(64, i, vd, result)
       }
     }
   };
-
-  write_vreg(num_elem, SEW_widen, LMUL_pow_widen, vd, result);
   set_vstart(zeros());
   RETIRE_SUCCESS
 }
@@ -643,100 +854,153 @@ function clause execute(VFNUNARY0(vm, vs2, vfnunary0, vd)) = {
   then return Illegal_Instruction();
   assert(SEW != 64);
 
-  let 'n = num_elem;
-  let 'm = SEW;
-  let 'o = SEW_widen;
-
-  let vm_val  : bits('n)             = read_vmask(num_elem, vm, zvreg);
-  let vs2_val : vector('n, bits('o)) = read_vreg(num_elem, SEW_widen, LMUL_pow_widen, vs2);
-  let vd_val  : vector('n, bits('m)) = read_vreg(num_elem, SEW, LMUL_pow, vd);
-
-  let (initial_result, mask) : (vector('n, bits('m)), bits('n)) = match init_masked_result(num_elem, SEW, LMUL_pow, vd_val, vm_val) {
-    Ok(v)   => v,
-    Err(()) => return Illegal_Instruction()
-  };
-  var result = initial_result;
-
-  foreach (i from 0 to (num_elem - 1)) {
-    if mask[i] == bitone then {
-      result[i] = match vfnunary0 {
-        FNV_CVT_XU_F     => {
-                              let (fflags, elem) : (bits_fflags, bits('m)) = match 'm {
-                                8  => riscv_f16ToUi8(rm_3b, vs2_val[i]),
-                                16 => riscv_f32ToUi16(rm_3b, vs2_val[i]),
-                                32 => riscv_f64ToUi32(rm_3b, vs2_val[i])
-                              };
-                              accrue_fflags(fflags);
-                              elem
-                            },
-        FNV_CVT_X_F      => {
-                              let (fflags, elem) : (bits_fflags, bits('m)) = match 'm {
-                                8  => riscv_f16ToI8(rm_3b, vs2_val[i]),
-                                16 => riscv_f32ToI16(rm_3b, vs2_val[i]),
-                                32 => riscv_f64ToI32(rm_3b, vs2_val[i])
-                              };
-                              accrue_fflags(fflags);
-                              elem
-                            },
-        FNV_CVT_F_XU     => {
-                              let (fflags, elem) : (bits_fflags, bits('m)) = match 'm {
-                                8  => return Illegal_Instruction(),
-                                16 => riscv_ui32ToF16(rm_3b, vs2_val[i]),
-                                32 => riscv_ui64ToF32(rm_3b, vs2_val[i])
-                              };
-                              accrue_fflags(fflags);
-                              elem
-                            },
-        FNV_CVT_F_X      => {
-                              let (fflags, elem) : (bits_fflags, bits('m)) = match 'm {
-                                8  => return Illegal_Instruction(),
-                                16 => riscv_i32ToF16(rm_3b, vs2_val[i]),
-                                32 => riscv_i64ToF32(rm_3b, vs2_val[i])
-                              };
-                              accrue_fflags(fflags);
-                              elem
-                            },
-        FNV_CVT_F_F      => {
-                              let (fflags, elem) : (bits_fflags, bits('m)) = match 'm {
-                                8  => return Illegal_Instruction(),
-                                16 => riscv_f32ToF16(rm_3b, vs2_val[i]),
-                                32 => riscv_f64ToF32(rm_3b, vs2_val[i])
-                              };
-                              accrue_fflags(fflags);
-                              elem
-                            },
-        FNV_CVT_ROD_F_F  => {
-                              let (fflags, elem) : (bits_fflags, bits('m)) = match 'm {
-                                8  => return Illegal_Instruction(),
-                                16 => riscv_f32ToF16(0b110, vs2_val[i]),
-                                32 => riscv_f64ToF32(0b110, vs2_val[i])
-                              };
-                              accrue_fflags(fflags);
-                              elem
-                            },
-        FNV_CVT_RTZ_XU_F => {
-                              let (fflags, elem) : (bits_fflags, bits('m)) = match 'm {
-                                8  => riscv_f16ToUi8(0b001, vs2_val[i]),
-                                16 => riscv_f32ToUi16(0b001, vs2_val[i]),
-                                32 => riscv_f64ToUi32(0b001, vs2_val[i])
-                              };
-                              accrue_fflags(fflags);
-                              elem
-                            },
-        FNV_CVT_RTZ_X_F  => {
-                              let (fflags, elem) : (bits_fflags, bits('m)) = match 'm {
-                                8  => riscv_f16ToI8(0b001, vs2_val[i]),
-                                16 => riscv_f32ToI16(0b001, vs2_val[i]),
-                                32 => riscv_f64ToI32(0b001, vs2_val[i])
-                              };
-                              accrue_fflags(fflags);
-                              elem
-                            }
+  if SEW == 8 then {
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(16) = read_single_element(16, i, vs2);
+        let result : bits(8) = match vfnunary0 {
+          FNV_CVT_XU_F     => {
+                               let (fflags, elem) : (bits_fflags, bits(8)) = riscv_f16ToUi8(rm_3b, vs2_val);
+                               accrue_fflags(fflags);
+                               elem
+                             },
+          FNV_CVT_X_F      => {
+                               let (fflags, elem) : (bits_fflags, bits(8)) = riscv_f16ToI8(rm_3b, vs2_val);
+                               accrue_fflags(fflags);
+                               elem
+                             },
+          FNV_CVT_F_XU     => return Illegal_Instruction(),
+          FNV_CVT_F_X      => return Illegal_Instruction(),
+          FNV_CVT_F_F      => return Illegal_Instruction(),
+          FNV_CVT_ROD_F_F  => return Illegal_Instruction(),
+          FNV_CVT_RTZ_XU_F => {
+                               let (fflags, elem) : (bits_fflags, bits(8)) = riscv_f16ToUi8(0b001, vs2_val);
+                               accrue_fflags(fflags);
+                               elem
+                             },
+          FNV_CVT_RTZ_X_F  => {
+                               let (fflags, elem) : (bits_fflags, bits(8)) = riscv_f16ToI8(0b001, vs2_val);
+                               accrue_fflags(fflags);
+                               elem
+                             }
+        };
+        write_single_element(8, i, vd, result)
       }
     }
+  } else if SEW == 16 then {
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(32) = read_single_element(32, i, vs2);
+        let result : bits(16) = match vfnunary0 {
+          FNV_CVT_XU_F     => {
+                               let (fflags, elem) : (bits_fflags, bits(16)) = riscv_f32ToUi16(rm_3b, vs2_val);
+                               accrue_fflags(fflags);
+                               elem
+                             },
+          FNV_CVT_X_F      => {
+                               let (fflags, elem) : (bits_fflags, bits(16)) = riscv_f32ToI16(rm_3b, vs2_val);
+                               accrue_fflags(fflags);
+                               elem
+                             },
+          FNV_CVT_F_XU     => {
+                               let (fflags, elem) : (bits_fflags, bits(16)) = riscv_ui32ToF16(rm_3b, vs2_val);
+                               accrue_fflags(fflags);
+                               elem
+                             },
+          FNV_CVT_F_X      => {
+                               let (fflags, elem) : (bits_fflags, bits(16)) = riscv_i32ToF16(rm_3b, vs2_val);
+                               accrue_fflags(fflags);
+                               elem
+                             },
+          FNV_CVT_F_F      => {
+                               let (fflags, elem) : (bits_fflags, bits(16)) = riscv_f32ToF16(rm_3b, vs2_val);
+                               accrue_fflags(fflags);
+                               elem
+                             },
+          FNV_CVT_ROD_F_F  => {
+                               let (fflags, elem) : (bits_fflags, bits(16)) = riscv_f32ToF16(0b110, vs2_val);
+                               accrue_fflags(fflags);
+                               elem
+                             },
+          FNV_CVT_RTZ_XU_F => {
+                               let (fflags, elem) : (bits_fflags, bits(16)) = riscv_f32ToUi16(0b001, vs2_val);
+                               accrue_fflags(fflags);
+                               elem
+                             },
+          FNV_CVT_RTZ_X_F  => {
+                               let (fflags, elem) : (bits_fflags, bits(16)) = riscv_f32ToI16(0b001, vs2_val);
+                               accrue_fflags(fflags);
+                               elem
+                             }
+        };
+        write_single_element(16, i, vd, result)
+      }
+    }
+  } else if SEW == 32 then {
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(64) = read_single_element(64, i, vs2);
+        let result : bits(32) = match vfnunary0 {
+          FNV_CVT_XU_F     => {
+                               let (fflags, elem) : (bits_fflags, bits(32)) = riscv_f64ToUi32(rm_3b, vs2_val);
+                               accrue_fflags(fflags);
+                               elem
+                             },
+          FNV_CVT_X_F      => {
+                               let (fflags, elem) : (bits_fflags, bits(32)) = riscv_f64ToI32(rm_3b, vs2_val);
+                               accrue_fflags(fflags);
+                               elem
+                             },
+          FNV_CVT_F_XU     => {
+                               let (fflags, elem) : (bits_fflags, bits(32)) = riscv_ui64ToF32(rm_3b, vs2_val);
+                               accrue_fflags(fflags);
+                               elem
+                             },
+          FNV_CVT_F_X      => {
+                               let (fflags, elem) : (bits_fflags, bits(32)) = riscv_i64ToF32(rm_3b, vs2_val);
+                               accrue_fflags(fflags);
+                               elem
+                             },
+          FNV_CVT_F_F      => {
+                               let (fflags, elem) : (bits_fflags, bits(32)) = riscv_f64ToF32(rm_3b, vs2_val);
+                               accrue_fflags(fflags);
+                               elem
+                             },
+          FNV_CVT_ROD_F_F  => {
+                               let (fflags, elem) : (bits_fflags, bits(32)) = riscv_f64ToF32(0b110, vs2_val);
+                               accrue_fflags(fflags);
+                               elem
+                             },
+          FNV_CVT_RTZ_XU_F => {
+                               let (fflags, elem) : (bits_fflags, bits(32)) = riscv_f64ToUi32(0b001, vs2_val);
+                               accrue_fflags(fflags);
+                               elem
+                             },
+          FNV_CVT_RTZ_X_F  => {
+                               let (fflags, elem) : (bits_fflags, bits(32)) = riscv_f64ToI32(0b001, vs2_val);
+                               accrue_fflags(fflags);
+                               elem
+                             }
+        };
+        write_single_element(32, i, vd, result)
+      }
+    }
+  } else {
+    return Illegal_Instruction()
   };
 
-  write_vreg(num_elem, SEW, LMUL_pow, vd, result);
   set_vstart(zeros());
   RETIRE_SUCCESS
 }
@@ -778,55 +1042,97 @@ function clause execute(VFUNARY1(vm, vs2, vfunary1, vd)) = {
   if illegal_fp_normal(vd, vm, SEW, rm_3b) then return Illegal_Instruction();
   assert(SEW != 8);
 
-  let 'n = num_elem;
-  let 'm = SEW;
-
-  let vm_val  : bits('n)             = read_vmask(num_elem, vm, zvreg);
-  let vs2_val : vector('n, bits('m)) = read_vreg(num_elem, SEW, LMUL_pow, vs2);
-  let vd_val  : vector('n, bits('m)) = read_vreg(num_elem, SEW, LMUL_pow, vd);
-
-  let (initial_result, mask) : (vector('n, bits('m)), bits('n)) = match init_masked_result(num_elem, SEW, LMUL_pow, vd_val, vm_val) {
-    Ok(v)   => v,
-    Err(()) => return Illegal_Instruction()
-  };
-  var result = initial_result;
-
-  foreach (i from 0 to (num_elem - 1)) {
-    if mask[i] == bitone then {
-      result[i] = match vfunary1 {
-        FVV_VSQRT      => {
-                            let (fflags, elem) : (bits_fflags, bits('m)) = match 'm {
-                              16  => riscv_f16Sqrt(rm_3b, vs2_val[i]),
-                              32  => riscv_f32Sqrt(rm_3b, vs2_val[i]),
-                              64  => riscv_f64Sqrt(rm_3b, vs2_val[i])
-                            };
-                            accrue_fflags(fflags);
-                            elem
-                          },
-        FVV_VRSQRT7    => {
-                            let (fflags, elem) : (bits_fflags, bits('m)) = match 'm {
-                              16  => riscv_f16Rsqrte7(rm_3b, vs2_val[i]),
-                              32  => riscv_f32Rsqrte7(rm_3b, vs2_val[i]),
-                              64  => riscv_f64Rsqrte7(rm_3b, vs2_val[i])
-                            };
-                            accrue_fflags(fflags);
-                            elem
-                          },
-        FVV_VREC7      => {
-                            let (fflags, elem) : (bits_fflags, bits('m)) = match 'm {
-                              16  => riscv_f16Recip7(rm_3b, vs2_val[i]),
-                              32  => riscv_f32Recip7(rm_3b, vs2_val[i]),
-                              64  => riscv_f64Recip7(rm_3b, vs2_val[i])
-                            };
-                            accrue_fflags(fflags);
-                            elem
-                          },
-        FVV_VCLASS     => fp_class(vs2_val[i])
+  if SEW == 16 then {
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(16) = read_single_element(16, i, vs2);
+        let result : bits(16) = match vfunary1 {
+          FVV_VSQRT      => {
+                              let (fflags, elem) : (bits_fflags, bits(16)) = riscv_f16Sqrt(rm_3b, vs2_val);
+                              accrue_fflags(fflags);
+                              elem
+                            },
+          FVV_VRSQRT7    => {
+                              let (fflags, elem) : (bits_fflags, bits(16)) = riscv_f16Rsqrte7(rm_3b, vs2_val);
+                              accrue_fflags(fflags);
+                              elem
+                            },
+          FVV_VREC7      => {
+                              let (fflags, elem) : (bits_fflags, bits(16)) = riscv_f16Recip7(rm_3b, vs2_val);
+                              accrue_fflags(fflags);
+                              elem
+                            },
+          FVV_VCLASS     => fp_class(vs2_val)
+        };
+        write_single_element(16, i, vd, result)
       }
     }
+  } else if SEW == 32 then {
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(32) = read_single_element(32, i, vs2);
+        let result : bits(32) = match vfunary1 {
+          FVV_VSQRT      => {
+                              let (fflags, elem) : (bits_fflags, bits(32)) = riscv_f32Sqrt(rm_3b, vs2_val);
+                              accrue_fflags(fflags);
+                              elem
+                            },
+          FVV_VRSQRT7    => {
+                              let (fflags, elem) : (bits_fflags, bits(32)) = riscv_f32Rsqrte7(rm_3b, vs2_val);
+                              accrue_fflags(fflags);
+                              elem
+                            },
+          FVV_VREC7      => {
+                              let (fflags, elem) : (bits_fflags, bits(32)) = riscv_f32Recip7(rm_3b, vs2_val);
+                              accrue_fflags(fflags);
+                              elem
+                            },
+          FVV_VCLASS     => fp_class(vs2_val)
+        };
+        write_single_element(32, i, vd, result)
+      }
+    }
+  } else if SEW == 64 then {
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(64) = read_single_element(64, i, vs2);
+        let result : bits(64) = match vfunary1 {
+          FVV_VSQRT      => {
+                              let (fflags, elem) : (bits_fflags, bits(64)) = riscv_f64Sqrt(rm_3b, vs2_val);
+                              accrue_fflags(fflags);
+                              elem
+                            },
+          FVV_VRSQRT7    => {
+                              let (fflags, elem) : (bits_fflags, bits(64)) = riscv_f64Rsqrte7(rm_3b, vs2_val);
+                              accrue_fflags(fflags);
+                              elem
+                            },
+          FVV_VREC7      => {
+                              let (fflags, elem) : (bits_fflags, bits(64)) = riscv_f64Recip7(rm_3b, vs2_val);
+                              accrue_fflags(fflags);
+                              elem
+                            },
+          FVV_VCLASS     => fp_class(vs2_val)
+        };
+        write_single_element(64, i, vd, result)
+      }
+    }
+  } else {
+    return Illegal_Instruction()
   };
 
-  write_vreg(num_elem, SEW, LMUL_pow, vd, result);
   set_vstart(zeros());
   RETIRE_SUCCESS
 }
@@ -857,14 +1163,17 @@ function clause execute(VFMVFS(vs2, rd)) = {
   then return Illegal_Instruction();
   assert(num_elem > 0 & SEW != 8);
 
-  let 'n = num_elem;
-  let 'm = SEW;
-
-  let vs2_val : vector('n, bits('m)) = read_vreg(num_elem, SEW, 0, vs2);
-  match 'm {
-    16 => F_H(rd) = vs2_val[0],
-    32 => F_S(rd) = vs2_val[0],
-    64 => F_D(rd) = vs2_val[0]
+  if SEW == 16 then {
+    let vs2_val : bits(16) = read_single_element(16, 0, vs2);
+    F_H(rd) = vs2_val
+  } else if SEW == 32 then {
+    let vs2_val : bits(32) = read_single_element(32, 0, vs2);
+    F_S(rd) = vs2_val
+  } else if SEW == 64 then {
+    let vs2_val : bits(64) = read_single_element(64, 0, vs2);
+    F_D(rd) = vs2_val
+  } else {
+    return Illegal_Instruction()
   };
   set_vstart(zeros());
 
@@ -906,48 +1215,110 @@ function clause execute(FVFTYPE(funct6, vm, vs2, rs1, vd)) = {
   if illegal_fp_normal(vd, vm, SEW, rm_3b) then return Illegal_Instruction();
   assert(SEW != 8);
 
-  let 'n = num_elem;
-  let 'm = SEW;
-
-  let vm_val  : bits('n)             = read_vmask(num_elem, vm, zvreg);
-  let rs1_val : bits('m)             = get_scalar_fp(rs1, 'm);
-  let vs2_val : vector('n, bits('m)) = read_vreg(num_elem, SEW, LMUL_pow, vs2);
-  let vd_val  : vector('n, bits('m)) = read_vreg(num_elem, SEW, LMUL_pow, vd);
-
-  let (initial_result, mask) : (vector('n, bits('m)), bits('n)) = match init_masked_result(num_elem, SEW, LMUL_pow, vd_val, vm_val) {
-    Ok(v)   => v,
-    Err(()) => return Illegal_Instruction()
-  };
-  var result = initial_result;
-
-  foreach (i from 0 to (num_elem - 1)) {
-    if mask[i] == bitone then {
-      result[i] = match funct6 {
-        VF_VADD          => fp_add(rm_3b, vs2_val[i], rs1_val),
-        VF_VSUB          => fp_sub(rm_3b, vs2_val[i], rs1_val),
-        VF_VRSUB         => fp_sub(rm_3b, rs1_val, vs2_val[i]),
-        VF_VMIN          => fp_min(vs2_val[i], rs1_val),
-        VF_VMAX          => fp_max(vs2_val[i], rs1_val),
-        VF_VMUL          => fp_mul(rm_3b, vs2_val[i], rs1_val),
-        VF_VDIV          => fp_div(rm_3b, vs2_val[i], rs1_val),
-        VF_VRDIV         => fp_div(rm_3b, rs1_val, vs2_val[i]),
-        VF_VSGNJ         => [rs1_val['m - 1]] @ vs2_val[i][('m - 2)..0],
-        VF_VSGNJN        => (0b1 ^ [rs1_val['m - 1]]) @ vs2_val[i][('m - 2)..0],
-        VF_VSGNJX        => ([vs2_val[i]['m - 1]] ^ [rs1_val['m - 1]]) @ vs2_val[i][('m - 2)..0],
-        VF_VSLIDE1UP     => {
-                              if vs2 == vd then return Illegal_Instruction();
-                              if i == 0 then rs1_val else vs2_val[i - 1]
-                            },
-        VF_VSLIDE1DOWN   => {
-                              let last_elem = get_end_element();
-                              assert(last_elem < num_elem);
-                              if i < last_elem then vs2_val[i + 1] else rs1_val
-                            }
+  if SEW == 16 then {
+    let rs1_val : bits(16) = get_scalar_fp(rs1, 16);
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(16) = read_single_element(16, i, vs2);
+        let result : bits(16) = match funct6 {
+          VF_VADD        => fp_add(rm_3b, vs2_val, rs1_val),
+          VF_VSUB        => fp_sub(rm_3b, vs2_val, rs1_val),
+          VF_VRSUB       => fp_sub(rm_3b, rs1_val, vs2_val),
+          VF_VMIN        => fp_min(vs2_val, rs1_val),
+          VF_VMAX        => fp_max(vs2_val, rs1_val),
+          VF_VMUL        => fp_mul(rm_3b, vs2_val, rs1_val),
+          VF_VDIV        => fp_div(rm_3b, vs2_val, rs1_val),
+          VF_VRDIV       => fp_div(rm_3b, rs1_val, vs2_val),
+          VF_VSGNJ       => [rs1_val[15]] @ vs2_val[14 .. 0],
+          VF_VSGNJN      => (0b1 ^ [rs1_val[15]]) @ vs2_val[14 .. 0],
+          VF_VSGNJX      => ([vs2_val[15]] ^ [rs1_val[15]]) @ vs2_val[14 .. 0],
+          VF_VSLIDE1UP   => {
+                               if vs2 == vd then return Illegal_Instruction();
+                               if i == 0 then rs1_val else read_single_element(16, i - 1, vs2)
+                             },
+          VF_VSLIDE1DOWN => {
+                               let last_elem = get_end_element();
+                               assert(last_elem < num_elem);
+                               if i < last_elem then read_single_element(16, i + 1, vs2) else rs1_val
+                             }
+        };
+        write_single_element(16, i, vd, result)
+      }
+    }
+  } else if SEW == 32 then {
+    let rs1_val : bits(32) = get_scalar_fp(rs1, 32);
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(32) = read_single_element(32, i, vs2);
+        let result : bits(32) = match funct6 {
+          VF_VADD        => fp_add(rm_3b, vs2_val, rs1_val),
+          VF_VSUB        => fp_sub(rm_3b, vs2_val, rs1_val),
+          VF_VRSUB       => fp_sub(rm_3b, rs1_val, vs2_val),
+          VF_VMIN        => fp_min(vs2_val, rs1_val),
+          VF_VMAX        => fp_max(vs2_val, rs1_val),
+          VF_VMUL        => fp_mul(rm_3b, vs2_val, rs1_val),
+          VF_VDIV        => fp_div(rm_3b, vs2_val, rs1_val),
+          VF_VRDIV       => fp_div(rm_3b, rs1_val, vs2_val),
+          VF_VSGNJ       => [rs1_val[31]] @ vs2_val[30 .. 0],
+          VF_VSGNJN      => (0b1 ^ [rs1_val[31]]) @ vs2_val[30 .. 0],
+          VF_VSGNJX      => ([vs2_val[31]] ^ [rs1_val[31]]) @ vs2_val[30 .. 0],
+          VF_VSLIDE1UP   => {
+                               if vs2 == vd then return Illegal_Instruction();
+                               if i == 0 then rs1_val else read_single_element(32, i - 1, vs2)
+                             },
+          VF_VSLIDE1DOWN => {
+                               let last_elem = get_end_element();
+                               assert(last_elem < num_elem);
+                               if i < last_elem then read_single_element(32, i + 1, vs2) else rs1_val
+                             }
+        };
+        write_single_element(32, i, vd, result)
+      }
+    }
+  } else {
+    let rs1_val : bits(64) = get_scalar_fp(rs1, 64);
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(64) = read_single_element(64, i, vs2);
+        let result : bits(64) = match funct6 {
+          VF_VADD        => fp_add(rm_3b, vs2_val, rs1_val),
+          VF_VSUB        => fp_sub(rm_3b, vs2_val, rs1_val),
+          VF_VRSUB       => fp_sub(rm_3b, rs1_val, vs2_val),
+          VF_VMIN        => fp_min(vs2_val, rs1_val),
+          VF_VMAX        => fp_max(vs2_val, rs1_val),
+          VF_VMUL        => fp_mul(rm_3b, vs2_val, rs1_val),
+          VF_VDIV        => fp_div(rm_3b, vs2_val, rs1_val),
+          VF_VRDIV       => fp_div(rm_3b, rs1_val, vs2_val),
+          VF_VSGNJ       => [rs1_val[63]] @ vs2_val[62 .. 0],
+          VF_VSGNJN      => (0b1 ^ [rs1_val[63]]) @ vs2_val[62 .. 0],
+          VF_VSGNJX      => ([vs2_val[63]] ^ [rs1_val[63]]) @ vs2_val[62 .. 0],
+          VF_VSLIDE1UP   => {
+                               if vs2 == vd then return Illegal_Instruction();
+                               if i == 0 then rs1_val else read_single_element(64, i - 1, vs2)
+                             },
+          VF_VSLIDE1DOWN => {
+                               let last_elem = get_end_element();
+                               assert(last_elem < num_elem);
+                               if i < last_elem then read_single_element(64, i + 1, vs2) else rs1_val
+                             }
+        };
+        write_single_element(64, i, vd, result)
       }
     }
   };
 
-  write_vreg(num_elem, SEW, LMUL_pow, vd, result);
   set_vstart(zeros());
   RETIRE_SUCCESS
 }
@@ -999,36 +1370,77 @@ function clause execute(FVFMATYPE(funct6, vm, vs2, rs1, vd)) = {
   if illegal_fp_normal(vd, vm, SEW, rm_3b) then return Illegal_Instruction();
   assert(SEW != 8);
 
-  let 'n = num_elem;
-  let 'm = SEW;
-
-  let vm_val  : bits('n)             = read_vmask(num_elem, vm, zvreg);
-  let rs1_val : bits('m)             = get_scalar_fp(rs1, 'm);
-  let vs2_val : vector('n, bits('m)) = read_vreg(num_elem, SEW, LMUL_pow, vs2);
-  let vd_val  : vector('n, bits('m)) = read_vreg(num_elem, SEW, LMUL_pow, vd);
-
-  let (initial_result, mask) : (vector('n, bits('m)), bits('n)) = match init_masked_result(num_elem, SEW, LMUL_pow, vd_val, vm_val) {
-    Ok(v)   => v,
-    Err(()) => return Illegal_Instruction()
-  };
-  var result = initial_result;
-
-  foreach (i from 0 to (num_elem - 1)) {
-    if mask[i] == bitone then {
-      result[i] = match funct6 {
-        VF_VMACC    => fp_muladd(rm_3b, rs1_val, vs2_val[i], vd_val[i]),
-        VF_VNMACC   => fp_nmulsub(rm_3b, rs1_val, vs2_val[i], vd_val[i]),
-        VF_VMSAC    => fp_mulsub(rm_3b, rs1_val, vs2_val[i], vd_val[i]),
-        VF_VNMSAC   => fp_nmuladd(rm_3b, rs1_val, vs2_val[i], vd_val[i]),
-        VF_VMADD    => fp_muladd(rm_3b, rs1_val, vd_val[i], vs2_val[i]),
-        VF_VNMADD   => fp_nmulsub(rm_3b, rs1_val, vd_val[i], vs2_val[i]),
-        VF_VMSUB    => fp_mulsub(rm_3b, rs1_val, vd_val[i], vs2_val[i]),
-        VF_VNMSUB   => fp_nmuladd(rm_3b, rs1_val, vd_val[i], vs2_val[i])
+  if SEW == 16 then {
+    let rs1_val : bits(16) = get_scalar_fp(rs1, 16);
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(16) = read_single_element(16, i, vs2);
+        let vd_val : bits(16) = read_single_element(16, i, vd);
+        let result : bits(16) = match funct6 {
+          VF_VMACC  => fp_muladd(rm_3b, rs1_val, vs2_val, vd_val),
+          VF_VNMACC => fp_nmulsub(rm_3b, rs1_val, vs2_val, vd_val),
+          VF_VMSAC  => fp_mulsub(rm_3b, rs1_val, vs2_val, vd_val),
+          VF_VNMSAC => fp_nmuladd(rm_3b, rs1_val, vs2_val, vd_val),
+          VF_VMADD  => fp_muladd(rm_3b, rs1_val, vd_val, vs2_val),
+          VF_VNMADD => fp_nmulsub(rm_3b, rs1_val, vd_val, vs2_val),
+          VF_VMSUB  => fp_mulsub(rm_3b, rs1_val, vd_val, vs2_val),
+          VF_VNMSUB => fp_nmuladd(rm_3b, rs1_val, vd_val, vs2_val)
+        };
+        write_single_element(16, i, vd, result)
+      }
+    }
+  } else if SEW == 32 then {
+    let rs1_val : bits(32) = get_scalar_fp(rs1, 32);
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(32) = read_single_element(32, i, vs2);
+        let vd_val : bits(32) = read_single_element(32, i, vd);
+        let result : bits(32) = match funct6 {
+          VF_VMACC  => fp_muladd(rm_3b, rs1_val, vs2_val, vd_val),
+          VF_VNMACC => fp_nmulsub(rm_3b, rs1_val, vs2_val, vd_val),
+          VF_VMSAC  => fp_mulsub(rm_3b, rs1_val, vs2_val, vd_val),
+          VF_VNMSAC => fp_nmuladd(rm_3b, rs1_val, vs2_val, vd_val),
+          VF_VMADD  => fp_muladd(rm_3b, rs1_val, vd_val, vs2_val),
+          VF_VNMADD => fp_nmulsub(rm_3b, rs1_val, vd_val, vs2_val),
+          VF_VMSUB  => fp_mulsub(rm_3b, rs1_val, vd_val, vs2_val),
+          VF_VNMSUB => fp_nmuladd(rm_3b, rs1_val, vd_val, vs2_val)
+        };
+        write_single_element(32, i, vd, result)
+      }
+    }
+  } else {
+    let rs1_val : bits(64) = get_scalar_fp(rs1, 64);
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(64) = read_single_element(64, i, vs2);
+        let vd_val : bits(64) = read_single_element(64, i, vd);
+        let result : bits(64) = match funct6 {
+          VF_VMACC  => fp_muladd(rm_3b, rs1_val, vs2_val, vd_val),
+          VF_VNMACC => fp_nmulsub(rm_3b, rs1_val, vs2_val, vd_val),
+          VF_VMSAC  => fp_mulsub(rm_3b, rs1_val, vs2_val, vd_val),
+          VF_VNMSAC => fp_nmuladd(rm_3b, rs1_val, vs2_val, vd_val),
+          VF_VMADD  => fp_muladd(rm_3b, rs1_val, vd_val, vs2_val),
+          VF_VNMADD => fp_nmulsub(rm_3b, rs1_val, vd_val, vs2_val),
+          VF_VMSUB  => fp_mulsub(rm_3b, rs1_val, vd_val, vs2_val),
+          VF_VNMSUB => fp_nmuladd(rm_3b, rs1_val, vd_val, vs2_val)
+        };
+        write_single_element(64, i, vd, result)
       }
     }
   };
 
-  write_vreg(num_elem, SEW, LMUL_pow, vd, result);
   set_vstart(zeros());
   RETIRE_SUCCESS
 }
@@ -1073,32 +1485,42 @@ function clause execute(FWVFTYPE(funct6, vm, vs2, rs1, vd)) = {
   then return Illegal_Instruction();
   assert(SEW >= 16 & SEW_widen <= 64);
 
-  let 'n = num_elem;
-  let 'm = SEW;
-  let 'o = SEW_widen;
-
-  let vm_val  : bits('n)             = read_vmask(num_elem, vm, zvreg);
-  let vd_val  : vector('n, bits('o)) = read_vreg(num_elem, SEW_widen, LMUL_pow_widen, vd);
-  let rs1_val : bits('m)             = get_scalar_fp(rs1, 'm);
-  let vs2_val : vector('n, bits('m)) = read_vreg(num_elem, SEW, LMUL_pow, vs2);
-
-  let (initial_result, mask) : (vector('n, bits('o)), bits('n)) = match init_masked_result(num_elem, SEW_widen, LMUL_pow_widen, vd_val, vm_val) {
-    Ok(v)   => v,
-    Err(()) => return Illegal_Instruction()
-  };
-  var result = initial_result;
-
-  foreach (i from 0 to (num_elem - 1)) {
-    if mask[i] == bitone then {
-      result[i] = match funct6 {
-        FWVF_VADD    => fp_add(rm_3b, fp_widen(vs2_val[i]), fp_widen(rs1_val)),
-        FWVF_VSUB    => fp_sub(rm_3b, fp_widen(vs2_val[i]), fp_widen(rs1_val)),
-        FWVF_VMUL    => fp_mul(rm_3b, fp_widen(vs2_val[i]), fp_widen(rs1_val))
+  if SEW == 16 then {
+    let rs1_val : bits(16) = get_scalar_fp(rs1, 16);
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow_widen, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(16) = read_single_element(16, i, vs2);
+        let result : bits(32) = match funct6 {
+          FWVF_VADD => fp_add(rm_3b, fp_widen(vs2_val), fp_widen(rs1_val)),
+          FWVF_VSUB => fp_sub(rm_3b, fp_widen(vs2_val), fp_widen(rs1_val)),
+          FWVF_VMUL => fp_mul(rm_3b, fp_widen(vs2_val), fp_widen(rs1_val))
+        };
+        write_single_element(32, i, vd, result)
+      }
+    }
+  } else {
+    let rs1_val : bits(32) = get_scalar_fp(rs1, 32);
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow_widen, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(32) = read_single_element(32, i, vs2);
+        let result : bits(64) = match funct6 {
+          FWVF_VADD => fp_add(rm_3b, fp_widen(vs2_val), fp_widen(rs1_val)),
+          FWVF_VSUB => fp_sub(rm_3b, fp_widen(vs2_val), fp_widen(rs1_val)),
+          FWVF_VMUL => fp_mul(rm_3b, fp_widen(vs2_val), fp_widen(rs1_val))
+        };
+        write_single_element(64, i, vd, result)
       }
     }
   };
 
-  write_vreg(num_elem, SEW_widen, LMUL_pow_widen, vd, result);
   set_vstart(zeros());
   RETIRE_SUCCESS
 }
@@ -1140,33 +1562,46 @@ function clause execute(FWVFMATYPE(funct6, vm, rs1, vs2, vd)) = {
   then return Illegal_Instruction();
   assert(SEW >= 16 & SEW_widen <= 64);
 
-  let 'n = num_elem;
-  let 'm = SEW;
-  let 'o = SEW_widen;
-
-  let vm_val  : bits('n)     = read_vmask(num_elem, vm, zvreg);
-  let vd_val  : vector('n, bits('o)) = read_vreg(num_elem, SEW_widen, LMUL_pow_widen, vd);
-  let rs1_val : bits('m)             = get_scalar_fp(rs1, 'm);
-  let vs2_val : vector('n, bits('m)) = read_vreg(num_elem, SEW, LMUL_pow, vs2);
-
-  let (initial_result, mask) : (vector('n, bits('o)), bits('n)) = match init_masked_result(num_elem, SEW_widen, LMUL_pow_widen, vd_val, vm_val) {
-    Ok(v)   => v,
-    Err(()) => return Illegal_Instruction()
-  };
-  var result = initial_result;
-
-  foreach (i from 0 to (num_elem - 1)) {
-    if mask[i] == bitone then {
-      result[i] = match funct6 {
-        FWVF_VMACC   => fp_muladd(rm_3b, fp_widen(rs1_val), fp_widen(vs2_val[i]), vd_val[i]),
-        FWVF_VNMACC  => fp_nmulsub(rm_3b, fp_widen(rs1_val), fp_widen(vs2_val[i]), vd_val[i]),
-        FWVF_VMSAC   => fp_mulsub(rm_3b, fp_widen(rs1_val), fp_widen(vs2_val[i]), vd_val[i]),
-        FWVF_VNMSAC  => fp_nmuladd(rm_3b, fp_widen(rs1_val), fp_widen(vs2_val[i]), vd_val[i])
+  if SEW == 16 then {
+    let rs1_val : bits(16) = get_scalar_fp(rs1, 16);
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow_widen, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(16) = read_single_element(16, i, vs2);
+        let vd_val : bits(32) = read_single_element(32, i, vd);
+        let result : bits(32) = match funct6 {
+          FWVF_VMACC  => fp_muladd(rm_3b, fp_widen(rs1_val), fp_widen(vs2_val), vd_val),
+          FWVF_VNMACC => fp_nmulsub(rm_3b, fp_widen(rs1_val), fp_widen(vs2_val), vd_val),
+          FWVF_VMSAC  => fp_mulsub(rm_3b, fp_widen(rs1_val), fp_widen(vs2_val), vd_val),
+          FWVF_VNMSAC => fp_nmuladd(rm_3b, fp_widen(rs1_val), fp_widen(vs2_val), vd_val)
+        };
+        write_single_element(32, i, vd, result)
+      }
+    }
+  } else {
+    let rs1_val : bits(32) = get_scalar_fp(rs1, 32);
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow_widen, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(32) = read_single_element(32, i, vs2);
+        let vd_val : bits(64) = read_single_element(64, i, vd);
+        let result : bits(64) = match funct6 {
+          FWVF_VMACC  => fp_muladd(rm_3b, fp_widen(rs1_val), fp_widen(vs2_val), vd_val),
+          FWVF_VNMACC => fp_nmulsub(rm_3b, fp_widen(rs1_val), fp_widen(vs2_val), vd_val),
+          FWVF_VMSAC  => fp_mulsub(rm_3b, fp_widen(rs1_val), fp_widen(vs2_val), vd_val),
+          FWVF_VNMSAC => fp_nmuladd(rm_3b, fp_widen(rs1_val), fp_widen(vs2_val), vd_val)
+        };
+        write_single_element(64, i, vd, result)
       }
     }
   };
 
-  write_vreg(num_elem, SEW_widen, LMUL_pow_widen, vd, result);
   set_vstart(zeros());
   RETIRE_SUCCESS
 }
@@ -1205,31 +1640,40 @@ function clause execute(FWFTYPE(funct6, vm, vs2, rs1, vd)) = {
   then return Illegal_Instruction();
   assert(SEW >= 16 & SEW_widen <= 64);
 
-  let 'n = num_elem;
-  let 'm = SEW;
-  let 'o = SEW_widen;
-
-  let vm_val  : bits('n)     = read_vmask(num_elem, vm, zvreg);
-  let vd_val  : vector('n, bits('o)) = read_vreg(num_elem, SEW_widen, LMUL_pow_widen, vd);
-  let rs1_val : bits('m)             = get_scalar_fp(rs1, 'm);
-  let vs2_val : vector('n, bits('o)) = read_vreg(num_elem, SEW_widen, LMUL_pow_widen, vs2);
-
-  let (initial_result, mask) : (vector('n, bits('o)), bits('n)) = match init_masked_result(num_elem, SEW_widen, LMUL_pow_widen, vd_val, vm_val) {
-    Ok(v)   => v,
-    Err(()) => return Illegal_Instruction()
-  };
-  var result = initial_result;
-
-  foreach (i from 0 to (num_elem - 1)) {
-    if mask[i] == bitone then {
-      result[i] = match funct6 {
-        FWF_VADD     => fp_add(rm_3b, vs2_val[i], fp_widen(rs1_val)),
-        FWF_VSUB     => fp_sub(rm_3b, vs2_val[i], fp_widen(rs1_val))
+  if SEW == 16 then {
+    let rs1_val : bits(16) = get_scalar_fp(rs1, 16);
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow_widen, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(32) = read_single_element(32, i, vs2);
+        let result : bits(32) = match funct6 {
+          FWF_VADD => fp_add(rm_3b, vs2_val, fp_widen(rs1_val)),
+          FWF_VSUB => fp_sub(rm_3b, vs2_val, fp_widen(rs1_val))
+        };
+        write_single_element(32, i, vd, result)
+      }
+    }
+  } else {
+    let rs1_val : bits(32) = get_scalar_fp(rs1, 32);
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow_widen, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(64) = read_single_element(64, i, vs2);
+        let result : bits(64) = match funct6 {
+          FWF_VADD => fp_add(rm_3b, vs2_val, fp_widen(rs1_val)),
+          FWF_VSUB => fp_sub(rm_3b, vs2_val, fp_widen(rs1_val))
+        };
+        write_single_element(64, i, vd, result)
       }
     }
   };
 
-  write_vreg(num_elem, SEW_widen, LMUL_pow_widen, vd, result);
   set_vstart(zeros());
   RETIRE_SUCCESS
 }
@@ -1265,31 +1709,55 @@ function clause execute(VFMERGE(vs2, rs1, vd)) = {
   if illegal_fp_vd_masked(vd, SEW, rm_3b) then return Illegal_Instruction();
   assert(SEW != 8);
 
-  let 'n = num_elem;
-  let 'm = SEW;
+  // VFMERGE per element: for i in [start_element, min(end_element, real_num_elem-1)]:
+  //   result[i] = vm_val[i] == 1 ? rs1 : vs2[i]
+  // For i outside this body range, result[i] = vd[i] (undisturbed) — under the
+  // single-element model, that means we simply do not write that element, so
+  // it retains the existing vd register value.
 
-  let vm_val  : bits('n)             = read_vmask(num_elem, 0b0, zvreg);
-  let rs1_val : bits('m)             = get_scalar_fp(rs1, 'm);
-  let vs2_val : vector('n, bits('m)) = read_vreg(num_elem, SEW, LMUL_pow, vs2);
-  let vd_val  : vector('n, bits('m)) = read_vreg(num_elem, SEW, LMUL_pow, vd);
-  var result  : vector('n, bits('m)) = vector_init(zeros());
-
-  let tail_ag : agtype = get_vtype_vta();
-  foreach (i from 0 to (num_elem - 1)) {
-    if i < start_element then {
-      result[i] = vd_val[i]
-    } else if i > end_element | i >= real_num_elem then {
-      result[i] = match tail_ag {
-        UNDISTURBED => vd_val[i],
-        AGNOSTIC    => vd_val[i] // TODO: configuration support
+  if SEW == 16 then {
+    let rs1_val : bits(16) = get_scalar_fp(rs1, 16);
+    foreach (i from 0 to (num_elem - 1)) {
+      if i >= start_element & i <= end_element & i < real_num_elem then {
+        let active : bool = match is_active_vector_element(num_elem, LMUL_pow, 0b0, i) {
+          Ok(v)   => v,
+          Err(()) => return Illegal_Instruction()
+        };
+        let vs2_val : bits(16) = read_single_element(16, i, vs2);
+        let elem    : bits(16) = if active then rs1_val else vs2_val;
+        write_single_element(16, i, vd, elem)
       }
-    } else {
-      // the merge operates on all body elements
-      result[i] = if vm_val[i] == bitone then rs1_val else vs2_val[i]
     }
+  } else if SEW == 32 then {
+    let rs1_val : bits(32) = get_scalar_fp(rs1, 32);
+    foreach (i from 0 to (num_elem - 1)) {
+      if i >= start_element & i <= end_element & i < real_num_elem then {
+        let active : bool = match is_active_vector_element(num_elem, LMUL_pow, 0b0, i) {
+          Ok(v)   => v,
+          Err(()) => return Illegal_Instruction()
+        };
+        let vs2_val : bits(32) = read_single_element(32, i, vs2);
+        let elem    : bits(32) = if active then rs1_val else vs2_val;
+        write_single_element(32, i, vd, elem)
+      }
+    }
+  } else if SEW == 64 then {
+    let rs1_val : bits(64) = get_scalar_fp(rs1, 64);
+    foreach (i from 0 to (num_elem - 1)) {
+      if i >= start_element & i <= end_element & i < real_num_elem then {
+        let active : bool = match is_active_vector_element(num_elem, LMUL_pow, 0b0, i) {
+          Ok(v)   => v,
+          Err(()) => return Illegal_Instruction()
+        };
+        let vs2_val : bits(64) = read_single_element(64, i, vs2);
+        let elem    : bits(64) = if active then rs1_val else vs2_val;
+        write_single_element(64, i, vd, elem)
+      }
+    }
+  } else {
+    return Illegal_Instruction()
   };
 
-  write_vreg(num_elem, SEW, LMUL_pow, vd, result);
   set_vstart(zeros());
   RETIRE_SUCCESS
 }
@@ -1314,23 +1782,27 @@ function clause execute(VFMV(rs1, vd)) = {
   if illegal_fp_vd_unmasked(SEW, rm_3b) then return Illegal_Instruction();
   assert(SEW != 8);
 
-  let 'n = num_elem;
-  let 'm = SEW;
-
-  let rs1_val : bits('m)             = get_scalar_fp(rs1, 'm);
-  let vd_val  : vector('n, bits('m)) = read_vreg(num_elem, SEW, LMUL_pow, vd);
-
-  let (initial_result, mask) : (vector('n, bits('m)), bits('n)) = match init_masked_result(num_elem, SEW, LMUL_pow, vd_val, ones()) {
-    Ok(v)   => v,
-    Err(()) => return Illegal_Instruction()
+  // VFMV broadcasts an FP scalar to every element of vd. Unmasked: every
+  // element is active.
+  if SEW == 16 then {
+    let rs1_val : bits(16) = get_scalar_fp(rs1, 16);
+    foreach (i from 0 to (num_elem - 1)) {
+      write_single_element(16, i, vd, rs1_val)
+    }
+  } else if SEW == 32 then {
+    let rs1_val : bits(32) = get_scalar_fp(rs1, 32);
+    foreach (i from 0 to (num_elem - 1)) {
+      write_single_element(32, i, vd, rs1_val)
+    }
+  } else if SEW == 64 then {
+    let rs1_val : bits(64) = get_scalar_fp(rs1, 64);
+    foreach (i from 0 to (num_elem - 1)) {
+      write_single_element(64, i, vd, rs1_val)
+    }
+  } else {
+    return Illegal_Instruction()
   };
-  var result = initial_result;
 
-  foreach (i from 0 to (num_elem - 1)) {
-    if mask[i] == bitone then result[i] = rs1_val
-  };
-
-  write_vreg(num_elem, SEW, LMUL_pow, vd, result);
   set_vstart(zeros());
   RETIRE_SUCCESS
 }
@@ -1353,31 +1825,23 @@ function clause execute(VFMVSF(rs1, vd)) = {
   if illegal_fp_vd_unmasked(SEW, rm_3b) then return Illegal_Instruction();
   assert(num_elem > 0 & SEW != 8);
 
-  let 'n = num_elem;
-  let 'm = SEW;
-
-  let rs1_val : bits('m)             = get_scalar_fp(rs1, 'm);
-  let vd_val  : vector('n, bits('m)) = read_vreg(num_elem, SEW, 0, vd);
-
-  let (initial_result, mask) : (vector('n, bits('m)), bits('n)) = match init_masked_result(num_elem, SEW, 0, vd_val, ones()) {
-    Ok(v)   => v,
-    Err(()) => return Illegal_Instruction()
-  };
-  var result = initial_result;
-
-  // one body element
-  if mask[0] == bitone then result[0] = rs1_val;
-
-  // others treated as tail elements
-  let tail_ag : agtype = get_vtype_vta();
-  foreach (i from 1 to (num_elem - 1)) {
-    result[i] = match tail_ag {
-      UNDISTURBED => vd_val[i],
-      AGNOSTIC    => vd_val[i] // TODO: configuration support
-    }
+  // VFMVSF copies a scalar FP into element 0 of vd. Elements 1..num_elem-1
+  // are tail elements; under the single-element model they retain their
+  // existing register values automatically (write_single_element only
+  // modifies the addressed element).
+  if SEW == 16 then {
+    let rs1_val : bits(16) = get_scalar_fp(rs1, 16);
+    write_single_element(16, 0, vd, rs1_val)
+  } else if SEW == 32 then {
+    let rs1_val : bits(32) = get_scalar_fp(rs1, 32);
+    write_single_element(32, 0, vd, rs1_val)
+  } else if SEW == 64 then {
+    let rs1_val : bits(64) = get_scalar_fp(rs1, 64);
+    write_single_element(64, 0, vd, rs1_val)
+  } else {
+    return Illegal_Instruction()
   };
 
-  write_vreg(num_elem, SEW, 0, vd, result);
   set_vstart(zeros());
   RETIRE_SUCCESS
 }

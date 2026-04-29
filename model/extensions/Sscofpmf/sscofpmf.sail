@@ -52,8 +52,8 @@ function clause is_CSR_accessible((0b0111001 /* 0x720 */ @ index : bits(5), _, _
 function clause read_CSR(0b0111001 /* 0x720 */ @ index : bits(5) if xlen == 32 & unsigned(index) >= 3) = read_mhpmeventh(hpmidx_from_bits(index))
 function clause write_CSR((0b0111001 /* 0x720 */ @ index : bits(5), value) if xlen == 32 & unsigned(index) >= 3) = {
   let index = hpmidx_from_bits(index);
-  write_mhpmeventh(index, value);
-  Ok(read_mhpmeventh(index))
+  write_mhpmeventh(index, value[31 .. 0]);
+  Ok(zero_extend(read_mhpmeventh(index)))
 }
 
 // scountovf collates the OF (overflow) bit for each event.

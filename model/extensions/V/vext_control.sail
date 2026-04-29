@@ -20,7 +20,7 @@ function get_num_elem(LMUL_pow, SEW) = {
 }
 
 // Reads a single vreg into multiple elements
-val read_single_vreg : forall 'n 'm, 'n >= 0 & is_sew_bitsize('m) . (int('n), int('m), vregidx) -> vector('n, bits('m))
+val read_single_vreg : forall 'n 'm, 'n >= 0 & is_sew_bitsize('m) & 'n * 'm <= vlen . (int('n), int('m), vregidx) -> vector('n, bits('m))
 function read_single_vreg(num_elem, SEW, vrid) = {
   // TODO: This should be part of the type signature for this function.
   assert(num_elem * SEW <= vlen);
@@ -37,10 +37,11 @@ function read_single_vreg(num_elem, SEW, vrid) = {
 }
 
 // Writes multiple elements into a single vreg
-val write_single_vreg : forall 'n 'm, 'n >= 0 & is_sew_bitsize('m) . (int('n), int('m), vregidx, vector('n, bits('m))) -> unit
+val write_single_vreg : forall 'n 'm, 'n >= 0 & is_sew_bitsize('m) & 'n * 'm <= vlen . (int('n), int('m), vregidx, vector('n, bits('m))) -> unit
 function write_single_vreg(num_elem, SEW, vrid, v) = {
   var r : vlenbits = zeros();
 
+  assert(num_elem * SEW <= vlen);
   assert(SEW <= vlen);
 
   foreach (i from (num_elem - 1) downto 0) {
@@ -72,6 +73,7 @@ function read_vreg(num_elem, SEW, LMUL_pow, vrid) = {
     } else {
       let 'num_elem_single = vlen / SEW;
       assert('num_elem_single >= 0);
+      assert('num_elem_single * SEW <= vlen);
       foreach (i_lmul from 0 to (2 ^ LMUL_pow_reg - 1)) {
         let r_start_i : int = i_lmul * 'num_elem_single;
         let r_end_i   : int = r_start_i + 'num_elem_single - 1;
@@ -118,6 +120,7 @@ function write_vreg(num_elem, SEW, LMUL_pow, vrid, vec) = {
 
   let 'num_elem_single = vlen / SEW;
   assert('num_elem_single >= 0);
+  assert('num_elem_single * SEW <= vlen);
   foreach (i_lmul from 0 to (2 ^ LMUL_pow_reg - 1)) {
     var single_vec : vector('num_elem_single, bits('m)) = vector_init(zeros());
     let vrid_lmul  : vregidx = vregidx_offset(vrid, to_bits_unsafe(5, i_lmul));

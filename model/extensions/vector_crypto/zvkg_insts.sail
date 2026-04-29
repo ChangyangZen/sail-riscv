@@ -21,19 +21,22 @@ function clause execute (VGHSH_VV(vs2, vs1, vd)) = {
 
   assert(SEW == 32);
 
-  let vs2_val = read_vreg(num_elem, SEW, LMUL_pow, vs2);
-  let vs1_val = read_vreg(num_elem, SEW, LMUL_pow, vs1);
-  let vd_val  = read_vreg(num_elem, SEW, LMUL_pow, vd);
-
   let eg_len   = (unsigned(vl) / 4);
   let eg_start = (unsigned(vstart) / 4);
 
   foreach (i from eg_start to (eg_len - 1)) {
     assert(i * 4 + 3 < num_elem);
 
-    let Y : bits(128) = get_velem_quad(vd_val, i);
-    let X : bits(128) = get_velem_quad(vs1_val, i);
-    var H : bits(128) = brev8(get_velem_quad(vs2_val, i));
+    let Y : bits(128) =
+      read_single_element(32, i * 4 + 3, vd) @ read_single_element(32, i * 4 + 2, vd) @
+      read_single_element(32, i * 4 + 1, vd) @ read_single_element(32, i * 4 + 0, vd);
+    let X : bits(128) =
+      read_single_element(32, i * 4 + 3, vs1) @ read_single_element(32, i * 4 + 2, vs1) @
+      read_single_element(32, i * 4 + 1, vs1) @ read_single_element(32, i * 4 + 0, vs1);
+    var H : bits(128) = brev8(
+      read_single_element(32, i * 4 + 3, vs2) @ read_single_element(32, i * 4 + 2, vs2) @
+      read_single_element(32, i * 4 + 1, vs2) @ read_single_element(32, i * 4 + 0, vs2)
+    );
 
     var Z : bits(128) = zeros();
     let S : bits(128) = brev8(Y ^ X);
@@ -46,7 +49,11 @@ function clause execute (VGHSH_VV(vs2, vs1, vd)) = {
       if reduce then H = H[127..8] @ (H[7..0] ^ 0x87);
     };
 
-    write_velem_quad(vd, SEW, brev8(Z), i);
+    let out : bits(128) = brev8(Z);
+    write_single_element(32, i * 4 + 0, vd, out[31 .. 0]);
+    write_single_element(32, i * 4 + 1, vd, out[63 .. 32]);
+    write_single_element(32, i * 4 + 2, vd, out[95 .. 64]);
+    write_single_element(32, i * 4 + 3, vd, out[127 .. 96]);
   };
 
   set_vstart(zeros());
@@ -69,17 +76,20 @@ function clause execute (VGMUL_VV(vs2, vd)) = {
 
   assert(SEW == 32);
 
-  let vs2_val = read_vreg(num_elem, SEW, LMUL_pow, vs2);
-  let vd_val  = read_vreg(num_elem, SEW, LMUL_pow, vd);
-
   let eg_len   = (unsigned(vl) / 4);
   let eg_start = (unsigned(vstart) / 4);
 
   foreach (i from eg_start to (eg_len - 1)) {
     assert(i * 4 + 3 < num_elem);
 
-    let Y : bits(128) = brev8(get_velem_quad(vd_val, i));
-    var H : bits(128) = brev8(get_velem_quad(vs2_val, i));
+    let Y : bits(128) = brev8(
+      read_single_element(32, i * 4 + 3, vd) @ read_single_element(32, i * 4 + 2, vd) @
+      read_single_element(32, i * 4 + 1, vd) @ read_single_element(32, i * 4 + 0, vd)
+    );
+    var H : bits(128) = brev8(
+      read_single_element(32, i * 4 + 3, vs2) @ read_single_element(32, i * 4 + 2, vs2) @
+      read_single_element(32, i * 4 + 1, vs2) @ read_single_element(32, i * 4 + 0, vs2)
+    );
     var Z : bits(128) = zeros();
 
     foreach (b from 0 to 127) {
@@ -90,7 +100,11 @@ function clause execute (VGMUL_VV(vs2, vd)) = {
       if reduce then H = H[127..8] @ (H[7..0] ^ 0x87);
     };
 
-    write_velem_quad(vd, SEW, brev8(Z), i);
+    let out : bits(128) = brev8(Z);
+    write_single_element(32, i * 4 + 0, vd, out[31 .. 0]);
+    write_single_element(32, i * 4 + 1, vd, out[63 .. 32]);
+    write_single_element(32, i * 4 + 2, vd, out[95 .. 64]);
+    write_single_element(32, i * 4 + 3, vd, out[127 .. 96]);
   };
 
   set_vstart(zeros());

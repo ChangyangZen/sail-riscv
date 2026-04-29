@@ -286,12 +286,44 @@ function clause execute (LOAD(imm, rs1, rd, is_unsigned, width)) = {
   // This is checked during decoding.
   assert(width <= xlen_bytes);
 
-  match vmem_read(rs1, offset, width, Read(Data), false, false, false) {
-    Ok(data) => {
-      X(rd) = extend_value(is_unsigned, data);
-      RETIRE_SUCCESS
-    },
-    Err(e) => e,
+  if width == 1 then {
+    match vmem_read(rs1, offset, 1, Read(Data), false, false, false) {
+      Ok(data) => {
+        let data : bits(8) = data;
+        X(rd) = extend_value(is_unsigned, data);
+        RETIRE_SUCCESS
+      },
+      Err(e) => e,
+    }
+  } else if width == 2 then {
+    match vmem_read(rs1, offset, 2, Read(Data), false, false, false) {
+      Ok(data) => {
+        let data : bits(16) = data;
+        X(rd) = extend_value(is_unsigned, data);
+        RETIRE_SUCCESS
+      },
+      Err(e) => e,
+    }
+  } else if width == 4 then {
+    match vmem_read(rs1, offset, 4, Read(Data), false, false, false) {
+      Ok(data) => {
+        let data : bits(32) = data;
+        X(rd) = extend_value(is_unsigned, data);
+        RETIRE_SUCCESS
+      },
+      Err(e) => e,
+    }
+  } else if width == 8 then {
+    match vmem_read(rs1, offset, 8, Read(Data), false, false, false) {
+      Ok(data) => {
+        let data : bits(64) = data;
+        X(rd) = extend_value(is_unsigned, data);
+        RETIRE_SUCCESS
+      },
+      Err(e) => e,
+    }
+  } else {
+    Illegal_Instruction()
   }
 }
 
@@ -316,10 +348,30 @@ function clause execute (STORE(imm, rs2, rs1, width)) = {
   // This is checked during decoding.
   assert(width <= xlen_bytes);
 
-  let data = X(rs2)[width * 8 - 1 .. 0];
-  match vmem_write(rs1, offset, width, data, Write(Data), false, false, false) {
-    Ok(_) => RETIRE_SUCCESS,
-    Err(e) => e,
+  if width == 1 then {
+    let data : bits(8) = X(rs2)[7 .. 0];
+    match vmem_write(rs1, offset, 1, data, Write(Data), false, false, false) {
+      Ok(_) => RETIRE_SUCCESS,
+      Err(e) => e,
+    }
+  } else if width == 2 then {
+    let data : bits(16) = X(rs2)[15 .. 0];
+    match vmem_write(rs1, offset, 2, data, Write(Data), false, false, false) {
+      Ok(_) => RETIRE_SUCCESS,
+      Err(e) => e,
+    }
+  } else if width == 4 then {
+    let data : bits(32) = X(rs2)[31 .. 0];
+    match vmem_write(rs1, offset, 4, data, Write(Data), false, false, false) {
+      Ok(_) => RETIRE_SUCCESS,
+      Err(e) => e,
+    }
+  } else {
+    let data : bits(64) = X(rs2);
+    match vmem_write(rs1, offset, 8, data, Write(Data), false, false, false) {
+      Ok(_) => RETIRE_SUCCESS,
+      Err(e) => e,
+    }
   }
 }
 

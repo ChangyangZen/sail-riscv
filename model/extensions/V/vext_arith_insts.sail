@@ -52,92 +52,316 @@ function clause execute(VVTYPE(funct6, vm, vs2, vs1, vd)) = {
 
   if illegal_normal(vd, vm) then return Illegal_Instruction();
 
-  let 'n = num_elem;
-  let 'm = SEW;
-
-  let vm_val  : bits('n)     = read_vmask(num_elem, vm, zvreg);
-  let vs1_val : vector('n, bits('m)) = read_vreg(num_elem, SEW, LMUL_pow, vs1);
-  let vs2_val : vector('n, bits('m)) = read_vreg(num_elem, SEW, LMUL_pow, vs2);
-  let vd_val  : vector('n, bits('m)) = read_vreg(num_elem, SEW, LMUL_pow, vd);
-
-  let (initial_result, mask) : (vector('n, bits('m)), bits('n)) = match init_masked_result(num_elem, SEW, LMUL_pow, vd_val, vm_val) {
-    Ok(v)   => v,
-    Err(()) => return Illegal_Instruction()
-  };
-  var result = initial_result;
-
-  foreach (i from 0 to (num_elem - 1)) {
-    if mask[i] == bitone then {
-      result[i] = match funct6 {
-        VV_VADD          => vs2_val[i] + vs1_val[i],
-        VV_VSUB          => vs2_val[i] - vs1_val[i],
-        VV_VAND          => vs2_val[i] & vs1_val[i],
-        VV_VOR           => vs2_val[i] | vs1_val[i],
-        VV_VXOR          => vs2_val[i] ^ vs1_val[i],
-        VV_VSADDU        => unsigned_saturation('m, zero_extend('m + 1, vs2_val[i]) + zero_extend('m + 1, vs1_val[i])),
-        VV_VSADD         => signed_saturation('m, sign_extend('m + 1, vs2_val[i]) + sign_extend('m + 1, vs1_val[i])),
-        VV_VSSUBU        => {
-                              if unsigned(vs2_val[i]) < unsigned(vs1_val[i]) then zeros()
-                              else unsigned_saturation('m, zero_extend('m + 1, vs2_val[i]) - zero_extend('m + 1, vs1_val[i]))
-                            },
-        VV_VSSUB         => signed_saturation('m, sign_extend('m + 1, vs2_val[i]) - sign_extend('m + 1, vs1_val[i])),
-        VV_VSMUL         => {
-                              let result_mul = to_bits_unsafe('m * 2, signed(vs2_val[i]) * signed(vs1_val[i]));
-                              let rounding_incr = get_fixed_rounding_incr(result_mul, 'm - 1);
-                              let result_wide = (result_mul >> ('m - 1)) + zero_extend('m * 2, rounding_incr);
-                              signed_saturation('m, result_wide['m..0])
-                            },
-        VV_VSLL          => {
-                              let shift_amount = get_shift_amount(vs1_val[i], SEW);
-                              vs2_val[i] << shift_amount
-                            },
-        VV_VSRL          => {
-                              let shift_amount = get_shift_amount(vs1_val[i], SEW);
-                              vs2_val[i] >> shift_amount
-                            },
-        VV_VSRA          => {
-                              let shift_amount = get_shift_amount(vs1_val[i], SEW);
-                              let v_double : bits('m * 2) = sign_extend(vs2_val[i]);
-                              (v_double >> shift_amount)[SEW - 1 .. 0]
-                            },
-        VV_VSSRL         => {
-                              let shift_amount = get_shift_amount(vs1_val[i], SEW);
-                              let rounding_incr = get_fixed_rounding_incr(vs2_val[i], shift_amount);
-                              (vs2_val[i] >> shift_amount) + zero_extend('m, rounding_incr)
-                            },
-        VV_VSSRA         => {
-                              let shift_amount = get_shift_amount(vs1_val[i], SEW);
-                              let rounding_incr = get_fixed_rounding_incr(vs2_val[i], shift_amount);
-                              let v_double : bits('m * 2) = sign_extend(vs2_val[i]);
-                              (v_double >> shift_amount)[SEW - 1 .. 0] + zero_extend('m, rounding_incr)
-                            },
-        VV_VMINU         => to_bits_unsafe(SEW, min(unsigned(vs2_val[i]), unsigned(vs1_val[i]))),
-        VV_VMIN          => to_bits_unsafe(SEW, min(signed(vs2_val[i]), signed(vs1_val[i]))),
-        VV_VMAXU         => to_bits_unsafe(SEW, max(unsigned(vs2_val[i]), unsigned(vs1_val[i]))),
-        VV_VMAX          => to_bits_unsafe(SEW, max(signed(vs2_val[i]), signed(vs1_val[i]))),
-        VV_VRGATHER      => {
-                              if (vs1 == vd | vs2 == vd) then return Illegal_Instruction();
-                              let idx = unsigned(vs1_val[i]);
-                              assert(LMUL_pow + vlen_exp - SEW_pow >= 0);
-                              let VLMAX = 2 ^ (LMUL_pow + vlen_exp - SEW_pow);
-                              assert(VLMAX <= 'n);
-                              if idx < VLMAX then vs2_val[idx] else zeros()
-                            },
-        VV_VRGATHEREI16  => {
-                              if (vs1 == vd | vs2 == vd) then return Illegal_Instruction();
-                              // vrgatherei16.vv uses SEW/LMUL for the data in vs2 but EEW=16 and EMUL = (16/SEW)*LMUL for the indices in vs1
-                              let vs1_new : vector('n, bits(16)) = read_vreg(num_elem, 16, 4 + LMUL_pow - SEW_pow, vs1);
-                              let idx = unsigned(vs1_new[i]);
-                              assert(LMUL_pow + vlen_exp - SEW_pow >= 0);
-                              let VLMAX = 2 ^ (LMUL_pow + vlen_exp - SEW_pow);
-                              assert(VLMAX <= 'n);
-                              if idx < VLMAX then vs2_val[idx] else zeros()
-                            }
+  if SEW == 8 then {
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs1_val : bits(8) = read_single_element(8, i, vs1);
+        let vs2_val : bits(8) = read_single_element(8, i, vs2);
+        let result : bits(8) = match funct6 {
+          VV_VADD          => vs2_val + vs1_val,
+          VV_VSUB          => vs2_val - vs1_val,
+          VV_VAND          => vs2_val & vs1_val,
+          VV_VOR           => vs2_val | vs1_val,
+          VV_VXOR          => vs2_val ^ vs1_val,
+          VV_VSADDU        => unsigned_saturation(8, zero_extend(9, vs2_val) + zero_extend(9, vs1_val)),
+          VV_VSADD         => signed_saturation(8, sign_extend(9, vs2_val) + sign_extend(9, vs1_val)),
+          VV_VSSUBU        => {
+                                if unsigned(vs2_val) < unsigned(vs1_val) then zeros()
+                                else unsigned_saturation(8, zero_extend(9, vs2_val) - zero_extend(9, vs1_val))
+                              },
+          VV_VSSUB         => signed_saturation(8, sign_extend(9, vs2_val) - sign_extend(9, vs1_val)),
+          VV_VSMUL         => {
+                                let result_mul : bits(16) = to_bits_unsafe(16, signed(vs2_val) * signed(vs1_val));
+                                let rounding_incr = get_fixed_rounding_incr(result_mul, 7);
+                                let result_wide = (result_mul >> 7) + zero_extend(16, rounding_incr);
+                                signed_saturation(8, result_wide[8..0])
+                              },
+          VV_VSLL          => {
+                                let shift_amount = get_shift_amount(vs1_val, 8);
+                                vs2_val << shift_amount
+                              },
+          VV_VSRL          => {
+                                let shift_amount = get_shift_amount(vs1_val, 8);
+                                vs2_val >> shift_amount
+                              },
+          VV_VSRA          => {
+                                let shift_amount = get_shift_amount(vs1_val, 8);
+                                let v_double : bits(16) = sign_extend(vs2_val);
+                                (v_double >> shift_amount)[7 .. 0]
+                              },
+          VV_VSSRL         => {
+                                let shift_amount = get_shift_amount(vs1_val, 8);
+                                let rounding_incr = get_fixed_rounding_incr(vs2_val, shift_amount);
+                                (vs2_val >> shift_amount) + zero_extend(8, rounding_incr)
+                              },
+          VV_VSSRA         => {
+                                let shift_amount = get_shift_amount(vs1_val, 8);
+                                let rounding_incr = get_fixed_rounding_incr(vs2_val, shift_amount);
+                                let v_double : bits(16) = sign_extend(vs2_val);
+                                (v_double >> shift_amount)[7 .. 0] + zero_extend(8, rounding_incr)
+                              },
+          VV_VMINU         => to_bits_unsafe(8, min(unsigned(vs2_val), unsigned(vs1_val))),
+          VV_VMIN          => to_bits_unsafe(8, min(signed(vs2_val), signed(vs1_val))),
+          VV_VMAXU         => to_bits_unsafe(8, max(unsigned(vs2_val), unsigned(vs1_val))),
+          VV_VMAX          => to_bits_unsafe(8, max(signed(vs2_val), signed(vs1_val))),
+          VV_VRGATHER      => {
+                                if (vs1 == vd | vs2 == vd) then return Illegal_Instruction();
+                                let idx : nat = unsigned(vs1_val);
+                                assert(LMUL_pow + vlen_exp - SEW_pow >= 0);
+                                let VLMAX = 2 ^ (LMUL_pow + vlen_exp - SEW_pow);
+                                assert(VLMAX <= num_elem);
+                                if idx < VLMAX then read_single_element(8, idx, vs2) else zeros()
+                              },
+          VV_VRGATHEREI16  => {
+                                if (vs1 == vd | vs2 == vd) then return Illegal_Instruction();
+                                // vrgatherei16.vv uses SEW/LMUL for data in vs2 but EEW=16 for indices in vs1.
+                                let idx_elem : bits(16) = read_single_element(16, i, vs1);
+                                let idx : nat = unsigned(idx_elem);
+                                assert(LMUL_pow + vlen_exp - SEW_pow >= 0);
+                                let VLMAX = 2 ^ (LMUL_pow + vlen_exp - SEW_pow);
+                                assert(VLMAX <= num_elem);
+                                if idx < VLMAX then read_single_element(8, idx, vs2) else zeros()
+                              }
+        };
+        write_single_element(8, i, vd, result)
+      }
+    }
+  } else if SEW == 16 then {
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs1_val : bits(16) = read_single_element(16, i, vs1);
+        let vs2_val : bits(16) = read_single_element(16, i, vs2);
+        let result : bits(16) = match funct6 {
+          VV_VADD          => vs2_val + vs1_val,
+          VV_VSUB          => vs2_val - vs1_val,
+          VV_VAND          => vs2_val & vs1_val,
+          VV_VOR           => vs2_val | vs1_val,
+          VV_VXOR          => vs2_val ^ vs1_val,
+          VV_VSADDU        => unsigned_saturation(16, zero_extend(17, vs2_val) + zero_extend(17, vs1_val)),
+          VV_VSADD         => signed_saturation(16, sign_extend(17, vs2_val) + sign_extend(17, vs1_val)),
+          VV_VSSUBU        => {
+                                if unsigned(vs2_val) < unsigned(vs1_val) then zeros()
+                                else unsigned_saturation(16, zero_extend(17, vs2_val) - zero_extend(17, vs1_val))
+                              },
+          VV_VSSUB         => signed_saturation(16, sign_extend(17, vs2_val) - sign_extend(17, vs1_val)),
+          VV_VSMUL         => {
+                                let result_mul : bits(32) = to_bits_unsafe(32, signed(vs2_val) * signed(vs1_val));
+                                let rounding_incr = get_fixed_rounding_incr(result_mul, 15);
+                                let result_wide = (result_mul >> 15) + zero_extend(32, rounding_incr);
+                                signed_saturation(16, result_wide[16..0])
+                              },
+          VV_VSLL          => {
+                                let shift_amount = get_shift_amount(vs1_val, 16);
+                                vs2_val << shift_amount
+                              },
+          VV_VSRL          => {
+                                let shift_amount = get_shift_amount(vs1_val, 16);
+                                vs2_val >> shift_amount
+                              },
+          VV_VSRA          => {
+                                let shift_amount = get_shift_amount(vs1_val, 16);
+                                let v_double : bits(32) = sign_extend(vs2_val);
+                                (v_double >> shift_amount)[15 .. 0]
+                              },
+          VV_VSSRL         => {
+                                let shift_amount = get_shift_amount(vs1_val, 16);
+                                let rounding_incr = get_fixed_rounding_incr(vs2_val, shift_amount);
+                                (vs2_val >> shift_amount) + zero_extend(16, rounding_incr)
+                              },
+          VV_VSSRA         => {
+                                let shift_amount = get_shift_amount(vs1_val, 16);
+                                let rounding_incr = get_fixed_rounding_incr(vs2_val, shift_amount);
+                                let v_double : bits(32) = sign_extend(vs2_val);
+                                (v_double >> shift_amount)[15 .. 0] + zero_extend(16, rounding_incr)
+                              },
+          VV_VMINU         => to_bits_unsafe(16, min(unsigned(vs2_val), unsigned(vs1_val))),
+          VV_VMIN          => to_bits_unsafe(16, min(signed(vs2_val), signed(vs1_val))),
+          VV_VMAXU         => to_bits_unsafe(16, max(unsigned(vs2_val), unsigned(vs1_val))),
+          VV_VMAX          => to_bits_unsafe(16, max(signed(vs2_val), signed(vs1_val))),
+          VV_VRGATHER      => {
+                                if (vs1 == vd | vs2 == vd) then return Illegal_Instruction();
+                                let idx : nat = unsigned(vs1_val);
+                                assert(LMUL_pow + vlen_exp - SEW_pow >= 0);
+                                let VLMAX = 2 ^ (LMUL_pow + vlen_exp - SEW_pow);
+                                assert(VLMAX <= num_elem);
+                                if idx < VLMAX then read_single_element(16, idx, vs2) else zeros()
+                              },
+          VV_VRGATHEREI16  => {
+                                if (vs1 == vd | vs2 == vd) then return Illegal_Instruction();
+                                let idx_elem : bits(16) = read_single_element(16, i, vs1);
+                                let idx : nat = unsigned(idx_elem);
+                                assert(LMUL_pow + vlen_exp - SEW_pow >= 0);
+                                let VLMAX = 2 ^ (LMUL_pow + vlen_exp - SEW_pow);
+                                assert(VLMAX <= num_elem);
+                                if idx < VLMAX then read_single_element(16, idx, vs2) else zeros()
+                              }
+        };
+        write_single_element(16, i, vd, result)
+      }
+    }
+  } else if SEW == 32 then {
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs1_val : bits(32) = read_single_element(32, i, vs1);
+        let vs2_val : bits(32) = read_single_element(32, i, vs2);
+        let result : bits(32) = match funct6 {
+          VV_VADD          => vs2_val + vs1_val,
+          VV_VSUB          => vs2_val - vs1_val,
+          VV_VAND          => vs2_val & vs1_val,
+          VV_VOR           => vs2_val | vs1_val,
+          VV_VXOR          => vs2_val ^ vs1_val,
+          VV_VSADDU        => unsigned_saturation(32, zero_extend(33, vs2_val) + zero_extend(33, vs1_val)),
+          VV_VSADD         => signed_saturation(32, sign_extend(33, vs2_val) + sign_extend(33, vs1_val)),
+          VV_VSSUBU        => {
+                                if unsigned(vs2_val) < unsigned(vs1_val) then zeros()
+                                else unsigned_saturation(32, zero_extend(33, vs2_val) - zero_extend(33, vs1_val))
+                              },
+          VV_VSSUB         => signed_saturation(32, sign_extend(33, vs2_val) - sign_extend(33, vs1_val)),
+          VV_VSMUL         => {
+                                let result_mul : bits(64) = to_bits_unsafe(64, signed(vs2_val) * signed(vs1_val));
+                                let rounding_incr = get_fixed_rounding_incr(result_mul, 31);
+                                let result_wide = (result_mul >> 31) + zero_extend(64, rounding_incr);
+                                signed_saturation(32, result_wide[32..0])
+                              },
+          VV_VSLL          => {
+                                let shift_amount = get_shift_amount(vs1_val, 32);
+                                vs2_val << shift_amount
+                              },
+          VV_VSRL          => {
+                                let shift_amount = get_shift_amount(vs1_val, 32);
+                                vs2_val >> shift_amount
+                              },
+          VV_VSRA          => {
+                                let shift_amount = get_shift_amount(vs1_val, 32);
+                                let v_double : bits(64) = sign_extend(vs2_val);
+                                (v_double >> shift_amount)[31 .. 0]
+                              },
+          VV_VSSRL         => {
+                                let shift_amount = get_shift_amount(vs1_val, 32);
+                                let rounding_incr = get_fixed_rounding_incr(vs2_val, shift_amount);
+                                (vs2_val >> shift_amount) + zero_extend(32, rounding_incr)
+                              },
+          VV_VSSRA         => {
+                                let shift_amount = get_shift_amount(vs1_val, 32);
+                                let rounding_incr = get_fixed_rounding_incr(vs2_val, shift_amount);
+                                let v_double : bits(64) = sign_extend(vs2_val);
+                                (v_double >> shift_amount)[31 .. 0] + zero_extend(32, rounding_incr)
+                              },
+          VV_VMINU         => to_bits_unsafe(32, min(unsigned(vs2_val), unsigned(vs1_val))),
+          VV_VMIN          => to_bits_unsafe(32, min(signed(vs2_val), signed(vs1_val))),
+          VV_VMAXU         => to_bits_unsafe(32, max(unsigned(vs2_val), unsigned(vs1_val))),
+          VV_VMAX          => to_bits_unsafe(32, max(signed(vs2_val), signed(vs1_val))),
+          VV_VRGATHER      => {
+                                if (vs1 == vd | vs2 == vd) then return Illegal_Instruction();
+                                let idx : nat = unsigned(vs1_val);
+                                assert(LMUL_pow + vlen_exp - SEW_pow >= 0);
+                                let VLMAX = 2 ^ (LMUL_pow + vlen_exp - SEW_pow);
+                                assert(VLMAX <= num_elem);
+                                if idx < VLMAX then read_single_element(32, idx, vs2) else zeros()
+                              },
+          VV_VRGATHEREI16  => {
+                                if (vs1 == vd | vs2 == vd) then return Illegal_Instruction();
+                                let idx_elem : bits(16) = read_single_element(16, i, vs1);
+                                let idx : nat = unsigned(idx_elem);
+                                assert(LMUL_pow + vlen_exp - SEW_pow >= 0);
+                                let VLMAX = 2 ^ (LMUL_pow + vlen_exp - SEW_pow);
+                                assert(VLMAX <= num_elem);
+                                if idx < VLMAX then read_single_element(32, idx, vs2) else zeros()
+                              }
+        };
+        write_single_element(32, i, vd, result)
+      }
+    }
+  } else {
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs1_val : bits(64) = read_single_element(64, i, vs1);
+        let vs2_val : bits(64) = read_single_element(64, i, vs2);
+        let result : bits(64) = match funct6 {
+          VV_VADD          => vs2_val + vs1_val,
+          VV_VSUB          => vs2_val - vs1_val,
+          VV_VAND          => vs2_val & vs1_val,
+          VV_VOR           => vs2_val | vs1_val,
+          VV_VXOR          => vs2_val ^ vs1_val,
+          VV_VSADDU        => unsigned_saturation(64, zero_extend(65, vs2_val) + zero_extend(65, vs1_val)),
+          VV_VSADD         => signed_saturation(64, sign_extend(65, vs2_val) + sign_extend(65, vs1_val)),
+          VV_VSSUBU        => {
+                                if unsigned(vs2_val) < unsigned(vs1_val) then zeros()
+                                else unsigned_saturation(64, zero_extend(65, vs2_val) - zero_extend(65, vs1_val))
+                              },
+          VV_VSSUB         => signed_saturation(64, sign_extend(65, vs2_val) - sign_extend(65, vs1_val)),
+          VV_VSMUL         => {
+                                let result_mul : bits(128) = to_bits_unsafe(128, signed(vs2_val) * signed(vs1_val));
+                                let rounding_incr = get_fixed_rounding_incr(result_mul, 63);
+                                let result_wide = (result_mul >> 63) + zero_extend(128, rounding_incr);
+                                signed_saturation(64, result_wide[64..0])
+                              },
+          VV_VSLL          => {
+                                let shift_amount = get_shift_amount(vs1_val, 64);
+                                vs2_val << shift_amount
+                              },
+          VV_VSRL          => {
+                                let shift_amount = get_shift_amount(vs1_val, 64);
+                                vs2_val >> shift_amount
+                              },
+          VV_VSRA          => {
+                                let shift_amount = get_shift_amount(vs1_val, 64);
+                                let v_double : bits(128) = sign_extend(vs2_val);
+                                (v_double >> shift_amount)[63 .. 0]
+                              },
+          VV_VSSRL         => {
+                                let shift_amount = get_shift_amount(vs1_val, 64);
+                                let rounding_incr = get_fixed_rounding_incr(vs2_val, shift_amount);
+                                (vs2_val >> shift_amount) + zero_extend(64, rounding_incr)
+                              },
+          VV_VSSRA         => {
+                                let shift_amount = get_shift_amount(vs1_val, 64);
+                                let rounding_incr = get_fixed_rounding_incr(vs2_val, shift_amount);
+                                let v_double : bits(128) = sign_extend(vs2_val);
+                                (v_double >> shift_amount)[63 .. 0] + zero_extend(64, rounding_incr)
+                              },
+          VV_VMINU         => to_bits_unsafe(64, min(unsigned(vs2_val), unsigned(vs1_val))),
+          VV_VMIN          => to_bits_unsafe(64, min(signed(vs2_val), signed(vs1_val))),
+          VV_VMAXU         => to_bits_unsafe(64, max(unsigned(vs2_val), unsigned(vs1_val))),
+          VV_VMAX          => to_bits_unsafe(64, max(signed(vs2_val), signed(vs1_val))),
+          VV_VRGATHER      => {
+                                if (vs1 == vd | vs2 == vd) then return Illegal_Instruction();
+                                let idx : nat = unsigned(vs1_val);
+                                assert(LMUL_pow + vlen_exp - SEW_pow >= 0);
+                                let VLMAX = 2 ^ (LMUL_pow + vlen_exp - SEW_pow);
+                                assert(VLMAX <= num_elem);
+                                if idx < VLMAX then read_single_element(64, idx, vs2) else zeros()
+                              },
+          VV_VRGATHEREI16  => {
+                                if (vs1 == vd | vs2 == vd) then return Illegal_Instruction();
+                                let idx_elem : bits(16) = read_single_element(16, i, vs1);
+                                let idx : nat = unsigned(idx_elem);
+                                assert(LMUL_pow + vlen_exp - SEW_pow >= 0);
+                                let VLMAX = 2 ^ (LMUL_pow + vlen_exp - SEW_pow);
+                                assert(VLMAX <= num_elem);
+                                if idx < VLMAX then read_single_element(64, idx, vs2) else zeros()
+                              }
+        };
+        write_single_element(64, i, vd, result)
       }
     }
   };
-
-  write_vreg(num_elem, SEW, LMUL_pow, vd, result);
   set_vstart(zeros());
   RETIRE_SUCCESS
 }
@@ -195,39 +419,71 @@ function clause execute(NVSTYPE(funct6, vm, vs2, vs1, vd)) = {
 
   assert(SEW_widen <= 64);
 
-  let 'n = num_elem;
-  let 'm = SEW;
-  let 'o = SEW_widen;
-
-  let vm_val  : bits('n)     = read_vmask(num_elem, vm, zvreg);
-  let vd_val  : vector('n, bits('m)) = read_vreg(num_elem, SEW, LMUL_pow, vd);
-  let vs1_val : vector('n, bits('m)) = read_vreg(num_elem, SEW, LMUL_pow, vs1);
-  let vs2_val : vector('n, bits('o)) = read_vreg(num_elem, SEW_widen, LMUL_pow_widen, vs2);
-
-  let (initial_result, mask) : (vector('n, bits('m)), bits('n)) = match init_masked_result(num_elem, SEW, LMUL_pow, vd_val, vm_val) {
-    Ok(v)   => v,
-    Err(()) => return Illegal_Instruction()
-  };
-  var result = initial_result;
-
-  foreach (i from 0 to (num_elem - 1)) {
-    if mask[i] == bitone then {
-      result[i] = match funct6 {
-        NVS_VNSRL  => {
-                        let shift_amount = get_shift_amount(vs1_val[i], SEW_widen);
-                        (vs2_val[i] >> shift_amount)[SEW - 1 .. 0]
-                      },
-        NVS_VNSRA  => {
-                        let shift_amount = get_shift_amount(vs1_val[i], SEW_widen);
-                        let v_double : bits('o * 2) = sign_extend(vs2_val[i]);
-                        let arith_shifted : bits('o) = (v_double >> shift_amount)[SEW_widen - 1 .. 0];
-                        (arith_shifted)[SEW - 1 .. 0]
-                      }
+  if SEW == 8 then {
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs1_val : bits(8) = read_single_element(8, i, vs1);
+        let vs2_val : bits(16) = read_single_element(16, i, vs2);
+        let shift_amount = get_shift_amount(vs1_val, 16);
+        let result : bits(8) = match funct6 {
+          NVS_VNSRL => (vs2_val >> shift_amount)[7 .. 0],
+          NVS_VNSRA => {
+                         let v_double : bits(32) = sign_extend(vs2_val);
+                         let arith_shifted : bits(16) = (v_double >> shift_amount)[15 .. 0];
+                         arith_shifted[7 .. 0]
+                       }
+        };
+        write_single_element(8, i, vd, result)
+      }
+    }
+  } else if SEW == 16 then {
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs1_val : bits(16) = read_single_element(16, i, vs1);
+        let vs2_val : bits(32) = read_single_element(32, i, vs2);
+        let shift_amount = get_shift_amount(vs1_val, 32);
+        let result : bits(16) = match funct6 {
+          NVS_VNSRL => (vs2_val >> shift_amount)[15 .. 0],
+          NVS_VNSRA => {
+                         let v_double : bits(64) = sign_extend(vs2_val);
+                         let arith_shifted : bits(32) = (v_double >> shift_amount)[31 .. 0];
+                         arith_shifted[15 .. 0]
+                       }
+        };
+        write_single_element(16, i, vd, result)
+      }
+    }
+  } else {
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs1_val : bits(32) = read_single_element(32, i, vs1);
+        let vs2_val : bits(64) = read_single_element(64, i, vs2);
+        let shift_amount = get_shift_amount(vs1_val, 64);
+        let result : bits(32) = match funct6 {
+          NVS_VNSRL => (vs2_val >> shift_amount)[31 .. 0],
+          NVS_VNSRA => {
+                         let v_double : bits(128) = sign_extend(vs2_val);
+                         let arith_shifted : bits(64) = (v_double >> shift_amount)[63 .. 0];
+                         arith_shifted[31 .. 0]
+                       }
+        };
+        write_single_element(32, i, vd, result)
       }
     }
   };
 
-  write_vreg(num_elem, SEW, LMUL_pow, vd, result);
   set_vstart(zeros());
   RETIRE_SUCCESS
 }
@@ -266,40 +522,83 @@ function clause execute(NVTYPE(funct6, vm, vs2, vs1, vd)) = {
 
   assert(SEW_widen <= 64);
 
-  let 'n = num_elem;
-  let 'm = SEW;
-  let 'o = SEW_widen;
-
-  let vm_val  : bits('n)     = read_vmask(num_elem, vm, zvreg);
-  let vd_val  : vector('n, bits('m)) = read_vreg(num_elem, SEW, LMUL_pow, vd);
-  let vs1_val : vector('n, bits('m)) = read_vreg(num_elem, SEW, LMUL_pow, vs1);
-  let vs2_val : vector('n, bits('o)) = read_vreg(num_elem, SEW_widen, LMUL_pow_widen, vs2);
-
-  let (initial_result, mask) : (vector('n, bits('m)), bits('n)) = match init_masked_result(num_elem, SEW, LMUL_pow, vd_val, vm_val) {
-    Ok(v)   => v,
-    Err(()) => return Illegal_Instruction()
-  };
-  var result = initial_result;
-
-  foreach (i from 0 to (num_elem - 1)) {
-    if mask[i] == bitone then {
-      let shift_amount = get_shift_amount(vs1_val[i], SEW_widen);
-      let rounding_incr = get_fixed_rounding_incr(vs2_val[i], shift_amount);
-      result[i] = match funct6 {
-        NV_VNCLIPU => {
-                        let result_wide = (vs2_val[i] >> shift_amount) + zero_extend('o, rounding_incr);
-                        unsigned_saturation('m, result_wide);
-                      },
-        NV_VNCLIP  => {
-                        let v_double : bits('m * 4) = sign_extend(vs2_val[i]);
-                        let result_wide = (v_double >> shift_amount)['o - 1 .. 0] + zero_extend('o, rounding_incr);
-                        signed_saturation('m, result_wide);
-                      }
+  if SEW == 8 then {
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs1_val : bits(8) = read_single_element(8, i, vs1);
+        let vs2_val : bits(16) = read_single_element(16, i, vs2);
+        let shift_amount = get_shift_amount(vs1_val, 16);
+        let rounding_incr : bits(1) = get_fixed_rounding_incr(vs2_val, shift_amount);
+        let result : bits(8) = match funct6 {
+          NV_VNCLIPU => {
+                          let result_wide : bits(16) = (vs2_val >> shift_amount) + zero_extend(16, rounding_incr);
+                          unsigned_saturation(8, result_wide)
+                        },
+          NV_VNCLIP  => {
+                          let v_double : bits(32) = sign_extend(vs2_val);
+                          let result_wide : bits(16) = (v_double >> shift_amount)[15 .. 0] + zero_extend(16, rounding_incr);
+                          signed_saturation(8, result_wide)
+                        }
+        };
+        write_single_element(8, i, vd, result)
+      }
+    }
+  } else if SEW == 16 then {
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs1_val : bits(16) = read_single_element(16, i, vs1);
+        let vs2_val : bits(32) = read_single_element(32, i, vs2);
+        let shift_amount = get_shift_amount(vs1_val, 32);
+        let rounding_incr : bits(1) = get_fixed_rounding_incr(vs2_val, shift_amount);
+        let result : bits(16) = match funct6 {
+          NV_VNCLIPU => {
+                          let result_wide : bits(32) = (vs2_val >> shift_amount) + zero_extend(32, rounding_incr);
+                          unsigned_saturation(16, result_wide)
+                        },
+          NV_VNCLIP  => {
+                          let v_double : bits(64) = sign_extend(vs2_val);
+                          let result_wide : bits(32) = (v_double >> shift_amount)[31 .. 0] + zero_extend(32, rounding_incr);
+                          signed_saturation(16, result_wide)
+                        }
+        };
+        write_single_element(16, i, vd, result)
+      }
+    }
+  } else {
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs1_val : bits(32) = read_single_element(32, i, vs1);
+        let vs2_val : bits(64) = read_single_element(64, i, vs2);
+        let shift_amount = get_shift_amount(vs1_val, 64);
+        let rounding_incr : bits(1) = get_fixed_rounding_incr(vs2_val, shift_amount);
+        let result : bits(32) = match funct6 {
+          NV_VNCLIPU => {
+                          let result_wide : bits(64) = (vs2_val >> shift_amount) + zero_extend(64, rounding_incr);
+                          unsigned_saturation(32, result_wide)
+                        },
+          NV_VNCLIP  => {
+                          let v_double : bits(128) = sign_extend(vs2_val);
+                          let result_wide : bits(64) = (v_double >> shift_amount)[63 .. 0] + zero_extend(64, rounding_incr);
+                          signed_saturation(32, result_wide)
+                        }
+        };
+        write_single_element(32, i, vd, result)
       }
     }
   };
 
-  write_vreg(num_elem, SEW, LMUL_pow, vd, result);
   set_vstart(zeros());
   RETIRE_SUCCESS
 }
@@ -332,31 +631,48 @@ function clause execute(MASKTYPEV(vs2, vs1, vd)) = {
 
   if illegal_vd_masked(vd) then return Illegal_Instruction();
 
-  let 'n = num_elem;
-  let 'm = SEW;
-
-  let vm_val  : bits('n)     = read_vmask(num_elem, 0b0, zvreg);
-  let vs1_val : vector('n, bits('m)) = read_vreg(num_elem, SEW, LMUL_pow, vs1);
-  let vs2_val : vector('n, bits('m)) = read_vreg(num_elem, SEW, LMUL_pow, vs2);
-  let vd_val  : vector('n, bits('m)) = read_vreg(num_elem, SEW, LMUL_pow, vd);
-  var result  : vector('n, bits('m)) = vector_init(zeros());
-
-  let tail_ag : agtype = get_vtype_vta();
-  foreach (i from 0 to (num_elem - 1)) {
-    if i < start_element then {
-      result[i] = vd_val[i]
-    } else if i > end_element | i >= real_num_elem then {
-      result[i] = match tail_ag {
-        UNDISTURBED => vd_val[i],
-        AGNOSTIC    => vd_val[i] // TODO: configuration support
+  if SEW == 8 then {
+    foreach (i from 0 to (num_elem - 1)) {
+      if i >= start_element & i <= end_element & i < real_num_elem then {
+        assert(i < vlen);
+        let result : bits(8) =
+          if V(zvreg)[i] == bitone then read_single_element(8, i, vs1)
+          else read_single_element(8, i, vs2);
+        write_single_element(8, i, vd, result)
       }
-    } else {
-      // the merge operates on all body elements
-      result[i] = if vm_val[i] == bitone then vs1_val[i] else vs2_val[i]
+    }
+  } else if SEW == 16 then {
+    foreach (i from 0 to (num_elem - 1)) {
+      if i >= start_element & i <= end_element & i < real_num_elem then {
+        assert(i < vlen);
+        let result : bits(16) =
+          if V(zvreg)[i] == bitone then read_single_element(16, i, vs1)
+          else read_single_element(16, i, vs2);
+        write_single_element(16, i, vd, result)
+      }
+    }
+  } else if SEW == 32 then {
+    foreach (i from 0 to (num_elem - 1)) {
+      if i >= start_element & i <= end_element & i < real_num_elem then {
+        assert(i < vlen);
+        let result : bits(32) =
+          if V(zvreg)[i] == bitone then read_single_element(32, i, vs1)
+          else read_single_element(32, i, vs2);
+        write_single_element(32, i, vd, result)
+      }
+    }
+  } else {
+    foreach (i from 0 to (num_elem - 1)) {
+      if i >= start_element & i <= end_element & i < real_num_elem then {
+        assert(i < vlen);
+        let result : bits(64) =
+          if V(zvreg)[i] == bitone then read_single_element(64, i, vs1)
+          else read_single_element(64, i, vs2);
+        write_single_element(64, i, vd, result)
+      }
     }
   };
 
-  write_vreg(num_elem, SEW, LMUL_pow, vd, result);
   set_vstart(zeros());
   RETIRE_SUCCESS
 }
@@ -378,23 +694,40 @@ function clause execute(MOVETYPEV(vs1, vd)) = {
 
   if illegal_vd_unmasked() then return Illegal_Instruction();
 
-  let 'n = num_elem;
-  let 'm = SEW;
-
-  let vs1_val : vector('n, bits('m)) = read_vreg(num_elem, SEW, LMUL_pow, vs1);
-  let vd_val  : vector('n, bits('m)) = read_vreg(num_elem, SEW, LMUL_pow, vd);
-
-  let (initial_result, mask) : (vector('n, bits('m)), bits('n)) = match init_masked_result(num_elem, SEW, LMUL_pow, vd_val, ones()) {
-    Ok(v)   => v,
-    Err(()) => return Illegal_Instruction()
+  if SEW == 8 then {
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, 0b1, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then write_single_element(8, i, vd, read_single_element(8, i, vs1))
+    }
+  } else if SEW == 16 then {
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, 0b1, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then write_single_element(16, i, vd, read_single_element(16, i, vs1))
+    }
+  } else if SEW == 32 then {
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, 0b1, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then write_single_element(32, i, vd, read_single_element(32, i, vs1))
+    }
+  } else {
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, 0b1, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then write_single_element(64, i, vd, read_single_element(64, i, vs1))
+    }
   };
-  var result = initial_result;
 
-  foreach (i from 0 to (num_elem - 1)) {
-    if mask[i] == bitone then result[i] = vs1_val[i]
-  };
-
-  write_vreg(num_elem, SEW, LMUL_pow, vd, result);
   set_vstart(zeros());
   RETIRE_SUCCESS
 }
@@ -439,75 +772,251 @@ function clause execute(VXTYPE(funct6, vm, vs2, rs1, vd)) = {
 
   if illegal_normal(vd, vm) then return Illegal_Instruction();
 
-  let 'n = num_elem;
-  let 'm = SEW;
-
-  let vm_val  : bits('n)             = read_vmask(num_elem, vm, zvreg);
-  let rs1_val : bits('m)             = get_scalar(rs1, SEW);
-  let vs2_val : vector('n, bits('m)) = read_vreg(num_elem, SEW, LMUL_pow, vs2);
-  let vd_val  : vector('n, bits('m)) = read_vreg(num_elem, SEW, LMUL_pow, vd);
-
-  let (initial_result, mask) : (vector('n, bits('m)), bits('n)) = match init_masked_result(num_elem, SEW, LMUL_pow, vd_val, vm_val) {
-    Ok(v)   => v,
-    Err(()) => return Illegal_Instruction()
-  };
-  var result = initial_result;
-
-  foreach (i from 0 to (num_elem - 1)) {
-    if mask[i] == bitone then {
-      result[i] = match funct6 {
-        VX_VADD    => vs2_val[i] + rs1_val,
-        VX_VSUB    => vs2_val[i] - rs1_val,
-        VX_VRSUB   => rs1_val - vs2_val[i],
-        VX_VAND    => vs2_val[i] & rs1_val,
-        VX_VOR     => vs2_val[i] | rs1_val,
-        VX_VXOR    => vs2_val[i] ^ rs1_val,
-        VX_VSADDU  => unsigned_saturation('m, zero_extend('m + 1, vs2_val[i]) + zero_extend('m + 1, rs1_val) ),
-        VX_VSADD   => signed_saturation('m, sign_extend('m + 1, vs2_val[i]) + sign_extend('m + 1, rs1_val) ),
-        VX_VSSUBU  => {
-                        if unsigned(vs2_val[i]) < unsigned(rs1_val) then zeros()
-                        else unsigned_saturation('m, zero_extend('m + 1, vs2_val[i]) - zero_extend('m + 1, rs1_val) )
-                      },
-        VX_VSSUB   => signed_saturation('m, sign_extend('m + 1, vs2_val[i]) - sign_extend('m + 1, rs1_val) ),
-        VX_VSMUL   => {
-                        let result_mul = to_bits_unsafe('m * 2, signed(vs2_val[i]) * signed(rs1_val));
-                        let rounding_incr = get_fixed_rounding_incr(result_mul, 'm - 1);
-                        let result_wide = (result_mul >> ('m - 1)) + zero_extend('m * 2, rounding_incr);
-                        signed_saturation('m, result_wide['m..0])
-                      },
-        VX_VSLL    => {
-                        let shift_amount = get_shift_amount(rs1_val, SEW);
-                        vs2_val[i] << shift_amount
-                      },
-        VX_VSRL    => {
-                        let shift_amount = get_shift_amount(rs1_val, SEW);
-                        vs2_val[i] >> shift_amount
-                      },
-        VX_VSRA    => {
-                        let shift_amount = get_shift_amount(rs1_val, SEW);
-                        let v_double : bits('m * 2) = sign_extend(vs2_val[i]);
-                        (v_double >> shift_amount)[SEW - 1 .. 0]
-                      },
-        VX_VSSRL   => {
-                        let shift_amount = get_shift_amount(rs1_val, SEW);
-                        let rounding_incr = get_fixed_rounding_incr(vs2_val[i], shift_amount);
-                        (vs2_val[i] >> shift_amount) + zero_extend('m, rounding_incr)
-                      },
-        VX_VSSRA   => {
-                        let shift_amount = get_shift_amount(rs1_val, SEW);
-                        let rounding_incr = get_fixed_rounding_incr(vs2_val[i], shift_amount);
-                        let v_double : bits('m * 2) = sign_extend(vs2_val[i]);
-                        (v_double >> shift_amount)[SEW - 1 .. 0] + zero_extend('m, rounding_incr)
-                      },
-        VX_VMINU   => to_bits_unsafe(SEW, min(unsigned(vs2_val[i]), unsigned(rs1_val))),
-        VX_VMIN    => to_bits_unsafe(SEW, min(signed(vs2_val[i]), signed(rs1_val))),
-        VX_VMAXU   => to_bits_unsafe(SEW, max(unsigned(vs2_val[i]), unsigned(rs1_val))),
-        VX_VMAX    => to_bits_unsafe(SEW, max(signed(vs2_val[i]), signed(rs1_val)))
+  if SEW == 8 then {
+    let rs1_val : bits(8) = get_scalar(rs1, 8);
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(8) = read_single_element(8, i, vs2);
+        let result : bits(8) = match funct6 {
+          VX_VADD    => vs2_val + rs1_val,
+          VX_VSUB    => vs2_val - rs1_val,
+          VX_VRSUB   => rs1_val - vs2_val,
+          VX_VAND    => vs2_val & rs1_val,
+          VX_VOR     => vs2_val | rs1_val,
+          VX_VXOR    => vs2_val ^ rs1_val,
+          VX_VSADDU  => unsigned_saturation(8, zero_extend(9, vs2_val) + zero_extend(9, rs1_val)),
+          VX_VSADD   => signed_saturation(8, sign_extend(9, vs2_val) + sign_extend(9, rs1_val)),
+          VX_VSSUBU  => {
+                          if unsigned(vs2_val) < unsigned(rs1_val) then zeros()
+                          else unsigned_saturation(8, zero_extend(9, vs2_val) - zero_extend(9, rs1_val))
+                        },
+          VX_VSSUB   => signed_saturation(8, sign_extend(9, vs2_val) - sign_extend(9, rs1_val)),
+          VX_VSMUL   => {
+                          let result_mul : bits(16) = to_bits_unsafe(16, signed(vs2_val) * signed(rs1_val));
+                          let rounding_incr = get_fixed_rounding_incr(result_mul, 7);
+                          let result_wide = (result_mul >> 7) + zero_extend(16, rounding_incr);
+                          signed_saturation(8, result_wide[8..0])
+                        },
+          VX_VSLL    => {
+                          let shift_amount = get_shift_amount(rs1_val, 8);
+                          vs2_val << shift_amount
+                        },
+          VX_VSRL    => {
+                          let shift_amount = get_shift_amount(rs1_val, 8);
+                          vs2_val >> shift_amount
+                        },
+          VX_VSRA    => {
+                          let shift_amount = get_shift_amount(rs1_val, 8);
+                          let v_double : bits(16) = sign_extend(vs2_val);
+                          (v_double >> shift_amount)[7 .. 0]
+                        },
+          VX_VSSRL   => {
+                          let shift_amount = get_shift_amount(rs1_val, 8);
+                          let rounding_incr = get_fixed_rounding_incr(vs2_val, shift_amount);
+                          (vs2_val >> shift_amount) + zero_extend(8, rounding_incr)
+                        },
+          VX_VSSRA   => {
+                          let shift_amount = get_shift_amount(rs1_val, 8);
+                          let rounding_incr = get_fixed_rounding_incr(vs2_val, shift_amount);
+                          let v_double : bits(16) = sign_extend(vs2_val);
+                          (v_double >> shift_amount)[7 .. 0] + zero_extend(8, rounding_incr)
+                        },
+          VX_VMINU   => to_bits_unsafe(8, min(unsigned(vs2_val), unsigned(rs1_val))),
+          VX_VMIN    => to_bits_unsafe(8, min(signed(vs2_val), signed(rs1_val))),
+          VX_VMAXU   => to_bits_unsafe(8, max(unsigned(vs2_val), unsigned(rs1_val))),
+          VX_VMAX    => to_bits_unsafe(8, max(signed(vs2_val), signed(rs1_val)))
+        };
+        write_single_element(8, i, vd, result)
+      }
+    }
+  } else if SEW == 16 then {
+    let rs1_val : bits(16) = get_scalar(rs1, 16);
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(16) = read_single_element(16, i, vs2);
+        let result : bits(16) = match funct6 {
+          VX_VADD    => vs2_val + rs1_val,
+          VX_VSUB    => vs2_val - rs1_val,
+          VX_VRSUB   => rs1_val - vs2_val,
+          VX_VAND    => vs2_val & rs1_val,
+          VX_VOR     => vs2_val | rs1_val,
+          VX_VXOR    => vs2_val ^ rs1_val,
+          VX_VSADDU  => unsigned_saturation(16, zero_extend(17, vs2_val) + zero_extend(17, rs1_val)),
+          VX_VSADD   => signed_saturation(16, sign_extend(17, vs2_val) + sign_extend(17, rs1_val)),
+          VX_VSSUBU  => {
+                          if unsigned(vs2_val) < unsigned(rs1_val) then zeros()
+                          else unsigned_saturation(16, zero_extend(17, vs2_val) - zero_extend(17, rs1_val))
+                        },
+          VX_VSSUB   => signed_saturation(16, sign_extend(17, vs2_val) - sign_extend(17, rs1_val)),
+          VX_VSMUL   => {
+                          let result_mul : bits(32) = to_bits_unsafe(32, signed(vs2_val) * signed(rs1_val));
+                          let rounding_incr = get_fixed_rounding_incr(result_mul, 15);
+                          let result_wide = (result_mul >> 15) + zero_extend(32, rounding_incr);
+                          signed_saturation(16, result_wide[16..0])
+                        },
+          VX_VSLL    => {
+                          let shift_amount = get_shift_amount(rs1_val, 16);
+                          vs2_val << shift_amount
+                        },
+          VX_VSRL    => {
+                          let shift_amount = get_shift_amount(rs1_val, 16);
+                          vs2_val >> shift_amount
+                        },
+          VX_VSRA    => {
+                          let shift_amount = get_shift_amount(rs1_val, 16);
+                          let v_double : bits(32) = sign_extend(vs2_val);
+                          (v_double >> shift_amount)[15 .. 0]
+                        },
+          VX_VSSRL   => {
+                          let shift_amount = get_shift_amount(rs1_val, 16);
+                          let rounding_incr = get_fixed_rounding_incr(vs2_val, shift_amount);
+                          (vs2_val >> shift_amount) + zero_extend(16, rounding_incr)
+                        },
+          VX_VSSRA   => {
+                          let shift_amount = get_shift_amount(rs1_val, 16);
+                          let rounding_incr = get_fixed_rounding_incr(vs2_val, shift_amount);
+                          let v_double : bits(32) = sign_extend(vs2_val);
+                          (v_double >> shift_amount)[15 .. 0] + zero_extend(16, rounding_incr)
+                        },
+          VX_VMINU   => to_bits_unsafe(16, min(unsigned(vs2_val), unsigned(rs1_val))),
+          VX_VMIN    => to_bits_unsafe(16, min(signed(vs2_val), signed(rs1_val))),
+          VX_VMAXU   => to_bits_unsafe(16, max(unsigned(vs2_val), unsigned(rs1_val))),
+          VX_VMAX    => to_bits_unsafe(16, max(signed(vs2_val), signed(rs1_val)))
+        };
+        write_single_element(16, i, vd, result)
+      }
+    }
+  } else if SEW == 32 then {
+    let rs1_val : bits(32) = get_scalar(rs1, 32);
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(32) = read_single_element(32, i, vs2);
+        let result : bits(32) = match funct6 {
+          VX_VADD    => vs2_val + rs1_val,
+          VX_VSUB    => vs2_val - rs1_val,
+          VX_VRSUB   => rs1_val - vs2_val,
+          VX_VAND    => vs2_val & rs1_val,
+          VX_VOR     => vs2_val | rs1_val,
+          VX_VXOR    => vs2_val ^ rs1_val,
+          VX_VSADDU  => unsigned_saturation(32, zero_extend(33, vs2_val) + zero_extend(33, rs1_val)),
+          VX_VSADD   => signed_saturation(32, sign_extend(33, vs2_val) + sign_extend(33, rs1_val)),
+          VX_VSSUBU  => {
+                          if unsigned(vs2_val) < unsigned(rs1_val) then zeros()
+                          else unsigned_saturation(32, zero_extend(33, vs2_val) - zero_extend(33, rs1_val))
+                        },
+          VX_VSSUB   => signed_saturation(32, sign_extend(33, vs2_val) - sign_extend(33, rs1_val)),
+          VX_VSMUL   => {
+                          let result_mul : bits(64) = to_bits_unsafe(64, signed(vs2_val) * signed(rs1_val));
+                          let rounding_incr = get_fixed_rounding_incr(result_mul, 31);
+                          let result_wide = (result_mul >> 31) + zero_extend(64, rounding_incr);
+                          signed_saturation(32, result_wide[32..0])
+                        },
+          VX_VSLL    => {
+                          let shift_amount = get_shift_amount(rs1_val, 32);
+                          vs2_val << shift_amount
+                        },
+          VX_VSRL    => {
+                          let shift_amount = get_shift_amount(rs1_val, 32);
+                          vs2_val >> shift_amount
+                        },
+          VX_VSRA    => {
+                          let shift_amount = get_shift_amount(rs1_val, 32);
+                          let v_double : bits(64) = sign_extend(vs2_val);
+                          (v_double >> shift_amount)[31 .. 0]
+                        },
+          VX_VSSRL   => {
+                          let shift_amount = get_shift_amount(rs1_val, 32);
+                          let rounding_incr = get_fixed_rounding_incr(vs2_val, shift_amount);
+                          (vs2_val >> shift_amount) + zero_extend(32, rounding_incr)
+                        },
+          VX_VSSRA   => {
+                          let shift_amount = get_shift_amount(rs1_val, 32);
+                          let rounding_incr = get_fixed_rounding_incr(vs2_val, shift_amount);
+                          let v_double : bits(64) = sign_extend(vs2_val);
+                          (v_double >> shift_amount)[31 .. 0] + zero_extend(32, rounding_incr)
+                        },
+          VX_VMINU   => to_bits_unsafe(32, min(unsigned(vs2_val), unsigned(rs1_val))),
+          VX_VMIN    => to_bits_unsafe(32, min(signed(vs2_val), signed(rs1_val))),
+          VX_VMAXU   => to_bits_unsafe(32, max(unsigned(vs2_val), unsigned(rs1_val))),
+          VX_VMAX    => to_bits_unsafe(32, max(signed(vs2_val), signed(rs1_val)))
+        };
+        write_single_element(32, i, vd, result)
+      }
+    }
+  } else {
+    let rs1_val : bits(64) = get_scalar(rs1, 64);
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(64) = read_single_element(64, i, vs2);
+        let result : bits(64) = match funct6 {
+          VX_VADD    => vs2_val + rs1_val,
+          VX_VSUB    => vs2_val - rs1_val,
+          VX_VRSUB   => rs1_val - vs2_val,
+          VX_VAND    => vs2_val & rs1_val,
+          VX_VOR     => vs2_val | rs1_val,
+          VX_VXOR    => vs2_val ^ rs1_val,
+          VX_VSADDU  => unsigned_saturation(64, zero_extend(65, vs2_val) + zero_extend(65, rs1_val)),
+          VX_VSADD   => signed_saturation(64, sign_extend(65, vs2_val) + sign_extend(65, rs1_val)),
+          VX_VSSUBU  => {
+                          if unsigned(vs2_val) < unsigned(rs1_val) then zeros()
+                          else unsigned_saturation(64, zero_extend(65, vs2_val) - zero_extend(65, rs1_val))
+                        },
+          VX_VSSUB   => signed_saturation(64, sign_extend(65, vs2_val) - sign_extend(65, rs1_val)),
+          VX_VSMUL   => {
+                          let result_mul : bits(128) = to_bits_unsafe(128, signed(vs2_val) * signed(rs1_val));
+                          let rounding_incr = get_fixed_rounding_incr(result_mul, 63);
+                          let result_wide = (result_mul >> 63) + zero_extend(128, rounding_incr);
+                          signed_saturation(64, result_wide[64..0])
+                        },
+          VX_VSLL    => {
+                          let shift_amount = get_shift_amount(rs1_val, 64);
+                          vs2_val << shift_amount
+                        },
+          VX_VSRL    => {
+                          let shift_amount = get_shift_amount(rs1_val, 64);
+                          vs2_val >> shift_amount
+                        },
+          VX_VSRA    => {
+                          let shift_amount = get_shift_amount(rs1_val, 64);
+                          let v_double : bits(128) = sign_extend(vs2_val);
+                          (v_double >> shift_amount)[63 .. 0]
+                        },
+          VX_VSSRL   => {
+                          let shift_amount = get_shift_amount(rs1_val, 64);
+                          let rounding_incr = get_fixed_rounding_incr(vs2_val, shift_amount);
+                          (vs2_val >> shift_amount) + zero_extend(64, rounding_incr)
+                        },
+          VX_VSSRA   => {
+                          let shift_amount = get_shift_amount(rs1_val, 64);
+                          let rounding_incr = get_fixed_rounding_incr(vs2_val, shift_amount);
+                          let v_double : bits(128) = sign_extend(vs2_val);
+                          (v_double >> shift_amount)[63 .. 0] + zero_extend(64, rounding_incr)
+                        },
+          VX_VMINU   => to_bits_unsafe(64, min(unsigned(vs2_val), unsigned(rs1_val))),
+          VX_VMIN    => to_bits_unsafe(64, min(signed(vs2_val), signed(rs1_val))),
+          VX_VMAXU   => to_bits_unsafe(64, max(unsigned(vs2_val), unsigned(rs1_val))),
+          VX_VMAX    => to_bits_unsafe(64, max(signed(vs2_val), signed(rs1_val)))
+        };
+        write_single_element(64, i, vd, result)
       }
     }
   };
-
-  write_vreg(num_elem, SEW, LMUL_pow, vd, result);
   set_vstart(zeros());
   RETIRE_SUCCESS
 }
@@ -564,39 +1073,71 @@ function clause execute(NXSTYPE(funct6, vm, vs2, rs1, vd)) = {
 
   assert(SEW_widen <= 64);
 
-  let 'n = num_elem;
-  let 'm = SEW;
-  let 'o = SEW_widen;
-
-  let vm_val  : bits('n)             = read_vmask(num_elem, vm, zvreg);
-  let vd_val  : vector('n, bits('m)) = read_vreg(num_elem, SEW, LMUL_pow, vd);
-  let rs1_val : bits('m)             = get_scalar(rs1, SEW);
-  let vs2_val : vector('n, bits('o)) = read_vreg(num_elem, SEW_widen, LMUL_pow_widen, vs2);
-
-  let (initial_result, mask) : (vector('n, bits('m)), bits('n)) = match init_masked_result(num_elem, SEW, LMUL_pow, vd_val, vm_val) {
-    Ok(v)   => v,
-    Err(()) => return Illegal_Instruction()
-  };
-  var result = initial_result;
-
-  foreach (i from 0 to (num_elem - 1)) {
-    if mask[i] == bitone then {
-      result[i] = match funct6 {
-        NXS_VNSRL  => {
-                        let shift_amount = get_shift_amount(rs1_val, SEW_widen);
-                        (vs2_val[i] >> shift_amount)[SEW - 1 .. 0]
-                      },
-        NXS_VNSRA  => {
-                        let shift_amount = get_shift_amount(rs1_val, SEW_widen);
-                        let v_double : bits('o * 2) = sign_extend(vs2_val[i]);
-                        let arith_shifted : bits('o) = (v_double >> shift_amount)[SEW_widen - 1 .. 0];
-                        arith_shifted[SEW - 1 .. 0]
-                      }
+  if SEW == 8 then {
+    let rs1_val : bits(8) = get_scalar(rs1, 8);
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(16) = read_single_element(16, i, vs2);
+        let shift_amount = get_shift_amount(rs1_val, 16);
+        let result : bits(8) = match funct6 {
+          NXS_VNSRL => (vs2_val >> shift_amount)[7 .. 0],
+          NXS_VNSRA => {
+                         let v_double : bits(32) = sign_extend(vs2_val);
+                         let arith_shifted : bits(16) = (v_double >> shift_amount)[15 .. 0];
+                         arith_shifted[7 .. 0]
+                       }
+        };
+        write_single_element(8, i, vd, result)
+      }
+    }
+  } else if SEW == 16 then {
+    let rs1_val : bits(16) = get_scalar(rs1, 16);
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(32) = read_single_element(32, i, vs2);
+        let shift_amount = get_shift_amount(rs1_val, 32);
+        let result : bits(16) = match funct6 {
+          NXS_VNSRL => (vs2_val >> shift_amount)[15 .. 0],
+          NXS_VNSRA => {
+                         let v_double : bits(64) = sign_extend(vs2_val);
+                         let arith_shifted : bits(32) = (v_double >> shift_amount)[31 .. 0];
+                         arith_shifted[15 .. 0]
+                       }
+        };
+        write_single_element(16, i, vd, result)
+      }
+    }
+  } else {
+    let rs1_val : bits(32) = get_scalar(rs1, 32);
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(64) = read_single_element(64, i, vs2);
+        let shift_amount = get_shift_amount(rs1_val, 64);
+        let result : bits(32) = match funct6 {
+          NXS_VNSRL => (vs2_val >> shift_amount)[31 .. 0],
+          NXS_VNSRA => {
+                         let v_double : bits(128) = sign_extend(vs2_val);
+                         let arith_shifted : bits(64) = (v_double >> shift_amount)[63 .. 0];
+                         arith_shifted[31 .. 0]
+                       }
+        };
+        write_single_element(32, i, vd, result)
       }
     }
   };
 
-  write_vreg(num_elem, SEW, LMUL_pow, vd, result);
   set_vstart(zeros());
   RETIRE_SUCCESS
 }
@@ -635,40 +1176,83 @@ function clause execute(NXTYPE(funct6, vm, vs2, rs1, vd)) = {
 
   assert(SEW_widen <= 64);
 
-  let 'n = num_elem;
-  let 'm = SEW;
-  let 'o = SEW_widen;
-
-  let vm_val  : bits('n)             = read_vmask(num_elem, vm, zvreg);
-  let vd_val  : vector('n, bits('m)) = read_vreg(num_elem, SEW, LMUL_pow, vd);
-  let rs1_val : bits('m)             = get_scalar(rs1, SEW);
-  let vs2_val : vector('n, bits('o)) = read_vreg(num_elem, SEW_widen, LMUL_pow_widen, vs2);
-
-  let (initial_result, mask) : (vector('n, bits('m)), bits('n)) = match init_masked_result(num_elem, SEW, LMUL_pow, vd_val, vm_val) {
-    Ok(v)   => v,
-    Err(()) => return Illegal_Instruction()
-  };
-  var result = initial_result;
-
-  foreach (i from 0 to (num_elem - 1)) {
-    if mask[i] == bitone then {
-      let shift_amount = get_shift_amount(rs1_val, SEW_widen);
-      let rounding_incr = get_fixed_rounding_incr(vs2_val[i], shift_amount);
-      result[i] = match funct6 {
-        NX_VNCLIPU => {
-                        let result_wide = (vs2_val[i] >> shift_amount) + zero_extend('o, rounding_incr);
-                        unsigned_saturation('m, result_wide)
-                      },
-        NX_VNCLIP  => {
-                        let v_double : bits('m * 4) = sign_extend(vs2_val[i]);
-                        let result_wide = (v_double >> shift_amount)['o - 1 .. 0] + zero_extend('o, rounding_incr);
-                        signed_saturation('m, result_wide)
-                      }
+  if SEW == 8 then {
+    let rs1_val : bits(8) = get_scalar(rs1, 8);
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(16) = read_single_element(16, i, vs2);
+        let shift_amount = get_shift_amount(rs1_val, 16);
+        let rounding_incr : bits(1) = get_fixed_rounding_incr(vs2_val, shift_amount);
+        let result : bits(8) = match funct6 {
+          NX_VNCLIPU => {
+                          let result_wide : bits(16) = (vs2_val >> shift_amount) + zero_extend(16, rounding_incr);
+                          unsigned_saturation(8, result_wide)
+                        },
+          NX_VNCLIP  => {
+                          let v_double : bits(32) = sign_extend(vs2_val);
+                          let result_wide : bits(16) = (v_double >> shift_amount)[15 .. 0] + zero_extend(16, rounding_incr);
+                          signed_saturation(8, result_wide)
+                        }
+        };
+        write_single_element(8, i, vd, result)
+      }
+    }
+  } else if SEW == 16 then {
+    let rs1_val : bits(16) = get_scalar(rs1, 16);
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(32) = read_single_element(32, i, vs2);
+        let shift_amount = get_shift_amount(rs1_val, 32);
+        let rounding_incr : bits(1) = get_fixed_rounding_incr(vs2_val, shift_amount);
+        let result : bits(16) = match funct6 {
+          NX_VNCLIPU => {
+                          let result_wide : bits(32) = (vs2_val >> shift_amount) + zero_extend(32, rounding_incr);
+                          unsigned_saturation(16, result_wide)
+                        },
+          NX_VNCLIP  => {
+                          let v_double : bits(64) = sign_extend(vs2_val);
+                          let result_wide : bits(32) = (v_double >> shift_amount)[31 .. 0] + zero_extend(32, rounding_incr);
+                          signed_saturation(16, result_wide)
+                        }
+        };
+        write_single_element(16, i, vd, result)
+      }
+    }
+  } else {
+    let rs1_val : bits(32) = get_scalar(rs1, 32);
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(64) = read_single_element(64, i, vs2);
+        let shift_amount = get_shift_amount(rs1_val, 64);
+        let rounding_incr : bits(1) = get_fixed_rounding_incr(vs2_val, shift_amount);
+        let result : bits(32) = match funct6 {
+          NX_VNCLIPU => {
+                          let result_wide : bits(64) = (vs2_val >> shift_amount) + zero_extend(64, rounding_incr);
+                          unsigned_saturation(32, result_wide)
+                        },
+          NX_VNCLIP  => {
+                          let v_double : bits(128) = sign_extend(vs2_val);
+                          let result_wide : bits(64) = (v_double >> shift_amount)[63 .. 0] + zero_extend(64, rounding_incr);
+                          signed_saturation(32, result_wide)
+                        }
+        };
+        write_single_element(32, i, vd, result)
       }
     }
   };
 
-  write_vreg(num_elem, SEW, LMUL_pow, vd, result);
   set_vstart(zeros());
   RETIRE_SUCCESS
 }
@@ -703,45 +1287,120 @@ function clause execute(VXSG(funct6, vm, vs2, rs1, vd)) = {
 
   if illegal_normal(vd, vm) then return Illegal_Instruction();
 
-  let 'n = num_elem;
-  let 'm = SEW;
+  let rs1_val : nat = unsigned(X(rs1));
+  assert(LMUL_pow + vlen_exp - SEW_pow >= 0);
+  let VLMAX = 2 ^ (LMUL_pow + vlen_exp - SEW_pow);
+  assert(VLMAX > 0 & VLMAX <= num_elem);
 
-  let vm_val  : bits('n)             = read_vmask(num_elem, vm, zvreg);
-  let rs1_val : nat                  = unsigned(X(rs1));
-  let vs2_val : vector('n, bits('m)) = read_vreg(num_elem, SEW, LMUL_pow, vs2);
-  let vd_val  : vector('n, bits('m)) = read_vreg(num_elem, SEW, LMUL_pow, vd);
-
-  let (initial_result, mask) : (vector('n, bits('m)), bits('n)) = match init_masked_result(num_elem, SEW, LMUL_pow, vd_val, vm_val) {
-    Ok(v)   => v,
-    Err(()) => return Illegal_Instruction()
-  };
-  var result = initial_result;
-
-  foreach (i from 0 to (num_elem - 1)) {
-    if mask[i] == bitone then {
-      result[i] = match funct6 {
-        VX_VSLIDEUP    => {
-                            if (vs2 == vd) then return Illegal_Instruction();
-                            if i >= rs1_val then vs2_val[i - rs1_val] else vd_val[i]
-                          },
-        VX_VSLIDEDOWN  => {
-                            assert(LMUL_pow + vlen_exp - SEW_pow >= 0);
-                            let VLMAX = 2 ^ (LMUL_pow + vlen_exp - SEW_pow);
-                            assert(VLMAX > 0 & VLMAX <= 'n);
-                            if i + rs1_val < VLMAX then vs2_val[i + rs1_val] else zeros()
-                          },
-        VX_VRGATHER    => {
-                            if (vs2 == vd) then return Illegal_Instruction();
-                            assert(LMUL_pow + vlen_exp - SEW_pow >= 0);
-                            let VLMAX = 2 ^ (LMUL_pow + vlen_exp - SEW_pow);
-                            assert(VLMAX > 0 & VLMAX <= 'n);
-                            if rs1_val < VLMAX then vs2_val[rs1_val] else zeros()
-                          }
+  if SEW == 8 then {
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        match funct6 {
+          VX_VSLIDEUP => {
+            if (vs2 == vd) then return Illegal_Instruction();
+            if i >= rs1_val then {
+              let src_i : nat = i - rs1_val;
+              write_single_element(8, i, vd, read_single_element(8, src_i, vs2))
+            }
+          },
+          VX_VSLIDEDOWN => {
+            let result : bits(8) = if i + rs1_val < VLMAX then read_single_element(8, i + rs1_val, vs2) else zeros();
+            write_single_element(8, i, vd, result)
+          },
+          VX_VRGATHER => {
+            if (vs2 == vd) then return Illegal_Instruction();
+            let result : bits(8) = if rs1_val < VLMAX then read_single_element(8, rs1_val, vs2) else zeros();
+            write_single_element(8, i, vd, result)
+          }
+        }
+      }
+    }
+  } else if SEW == 16 then {
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        match funct6 {
+          VX_VSLIDEUP => {
+            if (vs2 == vd) then return Illegal_Instruction();
+            if i >= rs1_val then {
+              let src_i : nat = i - rs1_val;
+              write_single_element(16, i, vd, read_single_element(16, src_i, vs2))
+            }
+          },
+          VX_VSLIDEDOWN => {
+            let result : bits(16) = if i + rs1_val < VLMAX then read_single_element(16, i + rs1_val, vs2) else zeros();
+            write_single_element(16, i, vd, result)
+          },
+          VX_VRGATHER => {
+            if (vs2 == vd) then return Illegal_Instruction();
+            let result : bits(16) = if rs1_val < VLMAX then read_single_element(16, rs1_val, vs2) else zeros();
+            write_single_element(16, i, vd, result)
+          }
+        }
+      }
+    }
+  } else if SEW == 32 then {
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        match funct6 {
+          VX_VSLIDEUP => {
+            if (vs2 == vd) then return Illegal_Instruction();
+            if i >= rs1_val then {
+              let src_i : nat = i - rs1_val;
+              write_single_element(32, i, vd, read_single_element(32, src_i, vs2))
+            }
+          },
+          VX_VSLIDEDOWN => {
+            let result : bits(32) = if i + rs1_val < VLMAX then read_single_element(32, i + rs1_val, vs2) else zeros();
+            write_single_element(32, i, vd, result)
+          },
+          VX_VRGATHER => {
+            if (vs2 == vd) then return Illegal_Instruction();
+            let result : bits(32) = if rs1_val < VLMAX then read_single_element(32, rs1_val, vs2) else zeros();
+            write_single_element(32, i, vd, result)
+          }
+        }
+      }
+    }
+  } else {
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        match funct6 {
+          VX_VSLIDEUP => {
+            if (vs2 == vd) then return Illegal_Instruction();
+            if i >= rs1_val then {
+              let src_i : nat = i - rs1_val;
+              write_single_element(64, i, vd, read_single_element(64, src_i, vs2))
+            }
+          },
+          VX_VSLIDEDOWN => {
+            let result : bits(64) = if i + rs1_val < VLMAX then read_single_element(64, i + rs1_val, vs2) else zeros();
+            write_single_element(64, i, vd, result)
+          },
+          VX_VRGATHER => {
+            if (vs2 == vd) then return Illegal_Instruction();
+            let result : bits(64) = if rs1_val < VLMAX then read_single_element(64, rs1_val, vs2) else zeros();
+            write_single_element(64, i, vd, result)
+          }
+        }
       }
     }
   };
-
-  write_vreg(num_elem, SEW, LMUL_pow, vd, result);
   set_vstart(zeros());
   RETIRE_SUCCESS
 }
@@ -775,31 +1434,52 @@ function clause execute(MASKTYPEX(vs2, rs1, vd)) = {
 
   if illegal_vd_masked(vd) then return Illegal_Instruction();
 
-  let 'n = num_elem;
-  let 'm = SEW;
-
-  let vm_val  : bits('n)             = read_vmask(num_elem, 0b0, zvreg);
-  let rs1_val : bits('m)             = get_scalar(rs1, SEW);
-  let vs2_val : vector('n, bits('m)) = read_vreg(num_elem, SEW, LMUL_pow, vs2);
-  let vd_val  : vector('n, bits('m)) = read_vreg(num_elem, SEW, LMUL_pow, vd);
-  var result  : vector('n, bits('m)) = vector_init(zeros());
-
-  let tail_ag : agtype = get_vtype_vta();
-  foreach (i from 0 to (num_elem - 1)) {
-    if i < start_element then {
-      result[i] = vd_val[i]
-    } else if i > end_element | i >= real_num_elem then {
-      result[i] = match tail_ag {
-        UNDISTURBED => vd_val[i],
-        AGNOSTIC    => vd_val[i] // TODO: configuration support
+  if SEW == 8 then {
+    let rs1_val : bits(8) = get_scalar(rs1, 8);
+    foreach (i from 0 to (num_elem - 1)) {
+      if i >= start_element & i <= end_element & i < real_num_elem then {
+        assert(i < vlen);
+        let result : bits(8) =
+          if V(zvreg)[i] == bitone then rs1_val
+          else read_single_element(8, i, vs2);
+        write_single_element(8, i, vd, result)
       }
-    } else {
-      // the merge operates on all body elements
-      result[i] = if vm_val[i] == bitone then rs1_val else vs2_val[i]
+    }
+  } else if SEW == 16 then {
+    let rs1_val : bits(16) = get_scalar(rs1, 16);
+    foreach (i from 0 to (num_elem - 1)) {
+      if i >= start_element & i <= end_element & i < real_num_elem then {
+        assert(i < vlen);
+        let result : bits(16) =
+          if V(zvreg)[i] == bitone then rs1_val
+          else read_single_element(16, i, vs2);
+        write_single_element(16, i, vd, result)
+      }
+    }
+  } else if SEW == 32 then {
+    let rs1_val : bits(32) = get_scalar(rs1, 32);
+    foreach (i from 0 to (num_elem - 1)) {
+      if i >= start_element & i <= end_element & i < real_num_elem then {
+        assert(i < vlen);
+        let result : bits(32) =
+          if V(zvreg)[i] == bitone then rs1_val
+          else read_single_element(32, i, vs2);
+        write_single_element(32, i, vd, result)
+      }
+    }
+  } else {
+    let rs1_val : bits(64) = get_scalar(rs1, 64);
+    foreach (i from 0 to (num_elem - 1)) {
+      if i >= start_element & i <= end_element & i < real_num_elem then {
+        assert(i < vlen);
+        let result : bits(64) =
+          if V(zvreg)[i] == bitone then rs1_val
+          else read_single_element(64, i, vs2);
+        write_single_element(64, i, vd, result)
+      }
     }
   };
 
-  write_vreg(num_elem, SEW, LMUL_pow, vd, result);
   set_vstart(zeros());
   RETIRE_SUCCESS
 }
@@ -821,23 +1501,44 @@ function clause execute(MOVETYPEX(rs1, vd)) = {
 
   if illegal_vd_unmasked() then return Illegal_Instruction();
 
-  let 'n = num_elem;
-  let 'm = SEW;
-
-  let rs1_val : bits('m)             = get_scalar(rs1, 'm);
-  let vd_val  : vector('n, bits('m)) = read_vreg(num_elem, SEW, LMUL_pow, vd);
-
-  let (initial_result, mask) : (vector('n, bits('m)), bits('n)) = match init_masked_result(num_elem, SEW, LMUL_pow, vd_val, ones()) {
-    Ok(v)   => v,
-    Err(()) => return Illegal_Instruction()
+  if SEW == 8 then {
+    let rs1_val : bits(8) = get_scalar(rs1, 8);
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, 0b1, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then write_single_element(8, i, vd, rs1_val)
+    }
+  } else if SEW == 16 then {
+    let rs1_val : bits(16) = get_scalar(rs1, 16);
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, 0b1, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then write_single_element(16, i, vd, rs1_val)
+    }
+  } else if SEW == 32 then {
+    let rs1_val : bits(32) = get_scalar(rs1, 32);
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, 0b1, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then write_single_element(32, i, vd, rs1_val)
+    }
+  } else {
+    let rs1_val : bits(64) = get_scalar(rs1, 64);
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, 0b1, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then write_single_element(64, i, vd, rs1_val)
+    }
   };
-  var result = initial_result;
 
-  foreach (i from 0 to (num_elem - 1)) {
-    if mask[i] == bitone then result[i] = rs1_val
-  };
-
-  write_vreg(num_elem, SEW, LMUL_pow, vd, result);
   set_vstart(zeros());
   RETIRE_SUCCESS
 }
@@ -874,59 +1575,191 @@ function clause execute(VITYPE(funct6, vm, vs2, simm, vd)) = {
 
   if illegal_normal(vd, vm) then return Illegal_Instruction();
 
-  let 'n = num_elem;
-  let 'm = SEW;
-
-  let vm_val  : bits('n)             = read_vmask(num_elem, vm, zvreg);
-  let imm_val : bits('m)             = sign_extend(simm);
-  let vs2_val : vector('n, bits('m)) = read_vreg(num_elem, SEW, LMUL_pow, vs2);
-  let vd_val  : vector('n, bits('m)) = read_vreg(num_elem, SEW, LMUL_pow, vd);
-
-  let (initial_result, mask) : (vector('n, bits('m)), bits('n)) = match init_masked_result(num_elem, SEW, LMUL_pow, vd_val, vm_val) {
-    Ok(v)   => v,
-    Err(()) => return Illegal_Instruction()
-  };
-  var result = initial_result;
-
-  foreach (i from 0 to (num_elem - 1)) {
-    if mask[i] == bitone then {
-      result[i] = match funct6 {
-        VI_VADD    => vs2_val[i] + imm_val,
-        VI_VRSUB   => imm_val - vs2_val[i],
-        VI_VAND    => vs2_val[i] & imm_val,
-        VI_VOR     => vs2_val[i] | imm_val,
-        VI_VXOR    => vs2_val[i] ^ imm_val,
-        VI_VSADDU  => unsigned_saturation('m, zero_extend('m + 1, vs2_val[i]) + zero_extend('m + 1, imm_val) ),
-        VI_VSADD   => signed_saturation('m, sign_extend('m + 1, vs2_val[i]) + sign_extend('m + 1, imm_val) ),
-        VI_VSLL    => {
-                        let shift_amount = get_shift_amount(zero_extend('m, simm), SEW);
-                        vs2_val[i] << shift_amount
-                      },
-        VI_VSRL    => {
-                        let shift_amount = get_shift_amount(zero_extend('m, simm), SEW);
-                        vs2_val[i] >> shift_amount
-                      },
-        VI_VSRA    => {
-                        let shift_amount = get_shift_amount(zero_extend('m, simm), SEW);
-                        let v_double : bits('m * 2) = sign_extend(vs2_val[i]);
-                        (v_double >> shift_amount)[SEW - 1 .. 0]
-                      },
-        VI_VSSRL   => {
-                        let shift_amount = get_shift_amount(zero_extend('m, simm), SEW);
-                        let rounding_incr = get_fixed_rounding_incr(vs2_val[i], shift_amount);
-                        (vs2_val[i] >> shift_amount) + zero_extend('m, rounding_incr)
-                      },
-        VI_VSSRA   => {
-                        let shift_amount = get_shift_amount(zero_extend('m, simm), SEW);
-                        let rounding_incr = get_fixed_rounding_incr(vs2_val[i], shift_amount);
-                        let v_double : bits('m * 2) = sign_extend(vs2_val[i]);
-                        (v_double >> shift_amount)[SEW - 1 .. 0] + zero_extend('m, rounding_incr)
-                      }
+  if SEW == 8 then {
+    let imm_val : bits(8) = sign_extend(simm);
+    let uimm_val : bits(8) = zero_extend(simm);
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(8) = read_single_element(8, i, vs2);
+        let result : bits(8) = match funct6 {
+          VI_VADD   => vs2_val + imm_val,
+          VI_VRSUB  => imm_val - vs2_val,
+          VI_VAND   => vs2_val & imm_val,
+          VI_VOR    => vs2_val | imm_val,
+          VI_VXOR   => vs2_val ^ imm_val,
+          VI_VSADDU => unsigned_saturation(8, zero_extend(9, vs2_val) + zero_extend(9, imm_val)),
+          VI_VSADD  => signed_saturation(8, sign_extend(9, vs2_val) + sign_extend(9, imm_val)),
+          VI_VSLL   => {
+                         let shift_amount = get_shift_amount(uimm_val, 8);
+                         vs2_val << shift_amount
+                       },
+          VI_VSRL   => {
+                         let shift_amount = get_shift_amount(uimm_val, 8);
+                         vs2_val >> shift_amount
+                       },
+          VI_VSRA   => {
+                         let shift_amount = get_shift_amount(uimm_val, 8);
+                         let v_double : bits(16) = sign_extend(vs2_val);
+                         (v_double >> shift_amount)[7 .. 0]
+                       },
+          VI_VSSRL  => {
+                         let shift_amount = get_shift_amount(uimm_val, 8);
+                         let rounding_incr = get_fixed_rounding_incr(vs2_val, shift_amount);
+                         (vs2_val >> shift_amount) + zero_extend(8, rounding_incr)
+                       },
+          VI_VSSRA  => {
+                         let shift_amount = get_shift_amount(uimm_val, 8);
+                         let rounding_incr = get_fixed_rounding_incr(vs2_val, shift_amount);
+                         let v_double : bits(16) = sign_extend(vs2_val);
+                         (v_double >> shift_amount)[7 .. 0] + zero_extend(8, rounding_incr)
+                       }
+        };
+        write_single_element(8, i, vd, result)
+      }
+    }
+  } else if SEW == 16 then {
+    let imm_val : bits(16) = sign_extend(simm);
+    let uimm_val : bits(16) = zero_extend(simm);
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(16) = read_single_element(16, i, vs2);
+        let result : bits(16) = match funct6 {
+          VI_VADD   => vs2_val + imm_val,
+          VI_VRSUB  => imm_val - vs2_val,
+          VI_VAND   => vs2_val & imm_val,
+          VI_VOR    => vs2_val | imm_val,
+          VI_VXOR   => vs2_val ^ imm_val,
+          VI_VSADDU => unsigned_saturation(16, zero_extend(17, vs2_val) + zero_extend(17, imm_val)),
+          VI_VSADD  => signed_saturation(16, sign_extend(17, vs2_val) + sign_extend(17, imm_val)),
+          VI_VSLL   => {
+                         let shift_amount = get_shift_amount(uimm_val, 16);
+                         vs2_val << shift_amount
+                       },
+          VI_VSRL   => {
+                         let shift_amount = get_shift_amount(uimm_val, 16);
+                         vs2_val >> shift_amount
+                       },
+          VI_VSRA   => {
+                         let shift_amount = get_shift_amount(uimm_val, 16);
+                         let v_double : bits(32) = sign_extend(vs2_val);
+                         (v_double >> shift_amount)[15 .. 0]
+                       },
+          VI_VSSRL  => {
+                         let shift_amount = get_shift_amount(uimm_val, 16);
+                         let rounding_incr = get_fixed_rounding_incr(vs2_val, shift_amount);
+                         (vs2_val >> shift_amount) + zero_extend(16, rounding_incr)
+                       },
+          VI_VSSRA  => {
+                         let shift_amount = get_shift_amount(uimm_val, 16);
+                         let rounding_incr = get_fixed_rounding_incr(vs2_val, shift_amount);
+                         let v_double : bits(32) = sign_extend(vs2_val);
+                         (v_double >> shift_amount)[15 .. 0] + zero_extend(16, rounding_incr)
+                       }
+        };
+        write_single_element(16, i, vd, result)
+      }
+    }
+  } else if SEW == 32 then {
+    let imm_val : bits(32) = sign_extend(simm);
+    let uimm_val : bits(32) = zero_extend(simm);
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(32) = read_single_element(32, i, vs2);
+        let result : bits(32) = match funct6 {
+          VI_VADD   => vs2_val + imm_val,
+          VI_VRSUB  => imm_val - vs2_val,
+          VI_VAND   => vs2_val & imm_val,
+          VI_VOR    => vs2_val | imm_val,
+          VI_VXOR   => vs2_val ^ imm_val,
+          VI_VSADDU => unsigned_saturation(32, zero_extend(33, vs2_val) + zero_extend(33, imm_val)),
+          VI_VSADD  => signed_saturation(32, sign_extend(33, vs2_val) + sign_extend(33, imm_val)),
+          VI_VSLL   => {
+                         let shift_amount = get_shift_amount(uimm_val, 32);
+                         vs2_val << shift_amount
+                       },
+          VI_VSRL   => {
+                         let shift_amount = get_shift_amount(uimm_val, 32);
+                         vs2_val >> shift_amount
+                       },
+          VI_VSRA   => {
+                         let shift_amount = get_shift_amount(uimm_val, 32);
+                         let v_double : bits(64) = sign_extend(vs2_val);
+                         (v_double >> shift_amount)[31 .. 0]
+                       },
+          VI_VSSRL  => {
+                         let shift_amount = get_shift_amount(uimm_val, 32);
+                         let rounding_incr = get_fixed_rounding_incr(vs2_val, shift_amount);
+                         (vs2_val >> shift_amount) + zero_extend(32, rounding_incr)
+                       },
+          VI_VSSRA  => {
+                         let shift_amount = get_shift_amount(uimm_val, 32);
+                         let rounding_incr = get_fixed_rounding_incr(vs2_val, shift_amount);
+                         let v_double : bits(64) = sign_extend(vs2_val);
+                         (v_double >> shift_amount)[31 .. 0] + zero_extend(32, rounding_incr)
+                       }
+        };
+        write_single_element(32, i, vd, result)
+      }
+    }
+  } else {
+    let imm_val : bits(64) = sign_extend(simm);
+    let uimm_val : bits(64) = zero_extend(simm);
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(64) = read_single_element(64, i, vs2);
+        let result : bits(64) = match funct6 {
+          VI_VADD   => vs2_val + imm_val,
+          VI_VRSUB  => imm_val - vs2_val,
+          VI_VAND   => vs2_val & imm_val,
+          VI_VOR    => vs2_val | imm_val,
+          VI_VXOR   => vs2_val ^ imm_val,
+          VI_VSADDU => unsigned_saturation(64, zero_extend(65, vs2_val) + zero_extend(65, imm_val)),
+          VI_VSADD  => signed_saturation(64, sign_extend(65, vs2_val) + sign_extend(65, imm_val)),
+          VI_VSLL   => {
+                         let shift_amount = get_shift_amount(uimm_val, 64);
+                         vs2_val << shift_amount
+                       },
+          VI_VSRL   => {
+                         let shift_amount = get_shift_amount(uimm_val, 64);
+                         vs2_val >> shift_amount
+                       },
+          VI_VSRA   => {
+                         let shift_amount = get_shift_amount(uimm_val, 64);
+                         let v_double : bits(128) = sign_extend(vs2_val);
+                         (v_double >> shift_amount)[63 .. 0]
+                       },
+          VI_VSSRL  => {
+                         let shift_amount = get_shift_amount(uimm_val, 64);
+                         let rounding_incr = get_fixed_rounding_incr(vs2_val, shift_amount);
+                         (vs2_val >> shift_amount) + zero_extend(64, rounding_incr)
+                       },
+          VI_VSSRA  => {
+                         let shift_amount = get_shift_amount(uimm_val, 64);
+                         let rounding_incr = get_fixed_rounding_incr(vs2_val, shift_amount);
+                         let v_double : bits(128) = sign_extend(vs2_val);
+                         (v_double >> shift_amount)[63 .. 0] + zero_extend(64, rounding_incr)
+                       }
+        };
+        write_single_element(64, i, vd, result)
       }
     }
   };
-
-  write_vreg(num_elem, SEW, LMUL_pow, vd, result);
   set_vstart(zeros());
   RETIRE_SUCCESS
 }
@@ -975,39 +1808,71 @@ function clause execute(NISTYPE(funct6, vm, vs2, uimm, vd)) = {
 
   assert(SEW_widen <= 64);
 
-  let 'n = num_elem;
-  let 'm = SEW;
-  let 'o = SEW_widen;
-
-  let vm_val  : bits('n)             = read_vmask(num_elem, vm, zvreg);
-  let vd_val  : vector('n, bits('m)) = read_vreg(num_elem, SEW, LMUL_pow, vd);
-  let imm_val : bits('m)             = zero_extend(uimm);
-  let vs2_val : vector('n, bits('o)) = read_vreg(num_elem, SEW_widen, LMUL_pow_widen, vs2);
-
-  let (initial_result, mask) : (vector('n, bits('m)), bits('n)) = match init_masked_result(num_elem, SEW, LMUL_pow, vd_val, vm_val) {
-    Ok(v)   => v,
-    Err(()) => return Illegal_Instruction()
-  };
-  var result = initial_result;
-
-  foreach (i from 0 to (num_elem - 1)) {
-    if mask[i] == bitone then {
-      result[i] = match funct6 {
-        NIS_VNSRL  => {
-                        let shift_amount = get_shift_amount(imm_val, SEW_widen);
-                        (vs2_val[i] >> shift_amount)[SEW - 1 .. 0]
-                      },
-        NIS_VNSRA  => {
-                        let shift_amount = get_shift_amount(imm_val, SEW_widen);
-                        let v_double : bits('o * 2) = sign_extend(vs2_val[i]);
-                        let arith_shifted : bits('o) = (v_double >> shift_amount)[SEW_widen - 1 .. 0];
-                        (arith_shifted)[SEW - 1 .. 0]
-                      }
+  if SEW == 8 then {
+    let imm_val : bits(8) = zero_extend(uimm);
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(16) = read_single_element(16, i, vs2);
+        let shift_amount = get_shift_amount(imm_val, 16);
+        let result : bits(8) = match funct6 {
+          NIS_VNSRL => (vs2_val >> shift_amount)[7 .. 0],
+          NIS_VNSRA => {
+                         let v_double : bits(32) = sign_extend(vs2_val);
+                         let arith_shifted : bits(16) = (v_double >> shift_amount)[15 .. 0];
+                         arith_shifted[7 .. 0]
+                       }
+        };
+        write_single_element(8, i, vd, result)
+      }
+    }
+  } else if SEW == 16 then {
+    let imm_val : bits(16) = zero_extend(uimm);
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(32) = read_single_element(32, i, vs2);
+        let shift_amount = get_shift_amount(imm_val, 32);
+        let result : bits(16) = match funct6 {
+          NIS_VNSRL => (vs2_val >> shift_amount)[15 .. 0],
+          NIS_VNSRA => {
+                         let v_double : bits(64) = sign_extend(vs2_val);
+                         let arith_shifted : bits(32) = (v_double >> shift_amount)[31 .. 0];
+                         arith_shifted[15 .. 0]
+                       }
+        };
+        write_single_element(16, i, vd, result)
+      }
+    }
+  } else {
+    let imm_val : bits(32) = zero_extend(uimm);
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(64) = read_single_element(64, i, vs2);
+        let shift_amount = get_shift_amount(imm_val, 64);
+        let result : bits(32) = match funct6 {
+          NIS_VNSRL => (vs2_val >> shift_amount)[31 .. 0],
+          NIS_VNSRA => {
+                         let v_double : bits(128) = sign_extend(vs2_val);
+                         let arith_shifted : bits(64) = (v_double >> shift_amount)[63 .. 0];
+                         arith_shifted[31 .. 0]
+                       }
+        };
+        write_single_element(32, i, vd, result)
       }
     }
   };
 
-  write_vreg(num_elem, SEW, LMUL_pow, vd, result);
   set_vstart(zeros());
   RETIRE_SUCCESS
 }
@@ -1046,40 +1911,83 @@ function clause execute(NITYPE(funct6, vm, vs2, uimm, vd)) = {
 
   assert(SEW_widen <= 64);
 
-  let 'n = num_elem;
-  let 'm = SEW;
-  let 'o = SEW_widen;
-
-  let vm_val  : bits('n)             = read_vmask(num_elem, vm, zvreg);
-  let vd_val  : vector('n, bits('m)) = read_vreg(num_elem, SEW, LMUL_pow, vd);
-  let imm_val : bits('m)             = zero_extend(uimm);
-  let vs2_val : vector('n, bits('o)) = read_vreg(num_elem, SEW_widen, LMUL_pow_widen, vs2);
-
-  let (initial_result, mask) : (vector('n, bits('m)), bits('n)) = match init_masked_result(num_elem, SEW, LMUL_pow, vd_val, vm_val) {
-    Ok(v)   => v,
-    Err(()) => return Illegal_Instruction()
-  };
-  var result = initial_result;
-
-  foreach (i from 0 to (num_elem - 1)) {
-    if mask[i] == bitone then {
-      let shift_amount = get_shift_amount(imm_val, SEW_widen);
-      let rounding_incr = get_fixed_rounding_incr(vs2_val[i], shift_amount);
-      result[i] = match funct6 {
-        NI_VNCLIPU => {
-                        let result_wide = (vs2_val[i] >> shift_amount) + zero_extend('o, rounding_incr);
-                        unsigned_saturation('m, result_wide)
-                      },
-        NI_VNCLIP  => {
-                        let v_double : bits('m * 4) = sign_extend(vs2_val[i]);
-                        let result_wide = (v_double >> shift_amount)['o - 1 .. 0] + zero_extend('o, rounding_incr);
-                        signed_saturation('m, result_wide)
-                      }
+  if SEW == 8 then {
+    let imm_val : bits(8) = zero_extend(uimm);
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(16) = read_single_element(16, i, vs2);
+        let shift_amount = get_shift_amount(imm_val, 16);
+        let rounding_incr : bits(1) = get_fixed_rounding_incr(vs2_val, shift_amount);
+        let result : bits(8) = match funct6 {
+          NI_VNCLIPU => {
+                          let result_wide : bits(16) = (vs2_val >> shift_amount) + zero_extend(16, rounding_incr);
+                          unsigned_saturation(8, result_wide)
+                        },
+          NI_VNCLIP  => {
+                          let v_double : bits(32) = sign_extend(vs2_val);
+                          let result_wide : bits(16) = (v_double >> shift_amount)[15 .. 0] + zero_extend(16, rounding_incr);
+                          signed_saturation(8, result_wide)
+                        }
+        };
+        write_single_element(8, i, vd, result)
+      }
+    }
+  } else if SEW == 16 then {
+    let imm_val : bits(16) = zero_extend(uimm);
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(32) = read_single_element(32, i, vs2);
+        let shift_amount = get_shift_amount(imm_val, 32);
+        let rounding_incr : bits(1) = get_fixed_rounding_incr(vs2_val, shift_amount);
+        let result : bits(16) = match funct6 {
+          NI_VNCLIPU => {
+                          let result_wide : bits(32) = (vs2_val >> shift_amount) + zero_extend(32, rounding_incr);
+                          unsigned_saturation(16, result_wide)
+                        },
+          NI_VNCLIP  => {
+                          let v_double : bits(64) = sign_extend(vs2_val);
+                          let result_wide : bits(32) = (v_double >> shift_amount)[31 .. 0] + zero_extend(32, rounding_incr);
+                          signed_saturation(16, result_wide)
+                        }
+        };
+        write_single_element(16, i, vd, result)
+      }
+    }
+  } else {
+    let imm_val : bits(32) = zero_extend(uimm);
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(64) = read_single_element(64, i, vs2);
+        let shift_amount = get_shift_amount(imm_val, 64);
+        let rounding_incr : bits(1) = get_fixed_rounding_incr(vs2_val, shift_amount);
+        let result : bits(32) = match funct6 {
+          NI_VNCLIPU => {
+                          let result_wide : bits(64) = (vs2_val >> shift_amount) + zero_extend(64, rounding_incr);
+                          unsigned_saturation(32, result_wide)
+                        },
+          NI_VNCLIP  => {
+                          let v_double : bits(128) = sign_extend(vs2_val);
+                          let result_wide : bits(64) = (v_double >> shift_amount)[63 .. 0] + zero_extend(64, rounding_incr);
+                          signed_saturation(32, result_wide)
+                        }
+        };
+        write_single_element(32, i, vd, result)
       }
     }
   };
 
-  write_vreg(num_elem, SEW, LMUL_pow, vd, result);
   set_vstart(zeros());
   RETIRE_SUCCESS
 }
@@ -1114,45 +2022,120 @@ function clause execute(VISG(funct6, vm, vs2, simm, vd)) = {
 
   if illegal_normal(vd, vm) then return Illegal_Instruction();
 
-  let 'n = num_elem;
-  let 'm = SEW;
+  let imm_val : nat = unsigned(zero_extend(xlen, simm));
+  assert(LMUL_pow + vlen_exp - SEW_pow >= 0);
+  let VLMAX = 2 ^ (LMUL_pow + vlen_exp - SEW_pow);
+  assert(VLMAX > 0 & VLMAX <= num_elem);
 
-  let vm_val  : bits('n)             = read_vmask(num_elem, vm, zvreg);
-  let imm_val : nat                  = unsigned(zero_extend(xlen, simm));
-  let vs2_val : vector('n, bits('m)) = read_vreg(num_elem, SEW, LMUL_pow, vs2);
-  let vd_val  : vector('n, bits('m)) = read_vreg(num_elem, SEW, LMUL_pow, vd);
-
-  let (initial_result, mask) : (vector('n, bits('m)), bits('n)) = match init_masked_result(num_elem, SEW, LMUL_pow, vd_val, vm_val) {
-    Ok(v)   => v,
-    Err(()) => return Illegal_Instruction()
-  };
-  var result = initial_result;
-
-  foreach (i from 0 to (num_elem - 1)) {
-    if mask[i] == bitone then {
-      result[i] = match funct6 {
-        VI_VSLIDEUP    => {
-                            if (vs2 == vd) then return Illegal_Instruction();
-                            if i >= imm_val then vs2_val[i - imm_val] else vd_val[i]
-                          },
-        VI_VSLIDEDOWN  => {
-                            assert(LMUL_pow + vlen_exp - SEW_pow >= 0);
-                            let VLMAX = 2 ^ (LMUL_pow + vlen_exp - SEW_pow);
-                            assert(VLMAX > 0 & VLMAX <= 'n);
-                            if i + imm_val < VLMAX then vs2_val[i + imm_val] else zeros()
-                          },
-        VI_VRGATHER    => {
-                            if (vs2 == vd) then return Illegal_Instruction();
-                            assert(LMUL_pow + vlen_exp - SEW_pow >= 0);
-                            let VLMAX = 2 ^ (LMUL_pow + vlen_exp - SEW_pow);
-                            assert(VLMAX > 0 & VLMAX <= 'n);
-                            if imm_val < VLMAX then vs2_val[imm_val] else zeros()
-                          }
+  if SEW == 8 then {
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        match funct6 {
+          VI_VSLIDEUP => {
+            if (vs2 == vd) then return Illegal_Instruction();
+            if i >= imm_val then {
+              let src_i : nat = i - imm_val;
+              write_single_element(8, i, vd, read_single_element(8, src_i, vs2))
+            }
+          },
+          VI_VSLIDEDOWN => {
+            let result : bits(8) = if i + imm_val < VLMAX then read_single_element(8, i + imm_val, vs2) else zeros();
+            write_single_element(8, i, vd, result)
+          },
+          VI_VRGATHER => {
+            if (vs2 == vd) then return Illegal_Instruction();
+            let result : bits(8) = if imm_val < VLMAX then read_single_element(8, imm_val, vs2) else zeros();
+            write_single_element(8, i, vd, result)
+          }
+        }
+      }
+    }
+  } else if SEW == 16 then {
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        match funct6 {
+          VI_VSLIDEUP => {
+            if (vs2 == vd) then return Illegal_Instruction();
+            if i >= imm_val then {
+              let src_i : nat = i - imm_val;
+              write_single_element(16, i, vd, read_single_element(16, src_i, vs2))
+            }
+          },
+          VI_VSLIDEDOWN => {
+            let result : bits(16) = if i + imm_val < VLMAX then read_single_element(16, i + imm_val, vs2) else zeros();
+            write_single_element(16, i, vd, result)
+          },
+          VI_VRGATHER => {
+            if (vs2 == vd) then return Illegal_Instruction();
+            let result : bits(16) = if imm_val < VLMAX then read_single_element(16, imm_val, vs2) else zeros();
+            write_single_element(16, i, vd, result)
+          }
+        }
+      }
+    }
+  } else if SEW == 32 then {
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        match funct6 {
+          VI_VSLIDEUP => {
+            if (vs2 == vd) then return Illegal_Instruction();
+            if i >= imm_val then {
+              let src_i : nat = i - imm_val;
+              write_single_element(32, i, vd, read_single_element(32, src_i, vs2))
+            }
+          },
+          VI_VSLIDEDOWN => {
+            let result : bits(32) = if i + imm_val < VLMAX then read_single_element(32, i + imm_val, vs2) else zeros();
+            write_single_element(32, i, vd, result)
+          },
+          VI_VRGATHER => {
+            if (vs2 == vd) then return Illegal_Instruction();
+            let result : bits(32) = if imm_val < VLMAX then read_single_element(32, imm_val, vs2) else zeros();
+            write_single_element(32, i, vd, result)
+          }
+        }
+      }
+    }
+  } else {
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        match funct6 {
+          VI_VSLIDEUP => {
+            if (vs2 == vd) then return Illegal_Instruction();
+            if i >= imm_val then {
+              let src_i : nat = i - imm_val;
+              write_single_element(64, i, vd, read_single_element(64, src_i, vs2))
+            }
+          },
+          VI_VSLIDEDOWN => {
+            let result : bits(64) = if i + imm_val < VLMAX then read_single_element(64, i + imm_val, vs2) else zeros();
+            write_single_element(64, i, vd, result)
+          },
+          VI_VRGATHER => {
+            if (vs2 == vd) then return Illegal_Instruction();
+            let result : bits(64) = if imm_val < VLMAX then read_single_element(64, imm_val, vs2) else zeros();
+            write_single_element(64, i, vd, result)
+          }
+        }
       }
     }
   };
-
-  write_vreg(num_elem, SEW, LMUL_pow, vd, result);
   set_vstart(zeros());
   RETIRE_SUCCESS
 }
@@ -1186,31 +2169,52 @@ function clause execute(MASKTYPEI(vs2, simm, vd)) = {
 
   if illegal_vd_masked(vd) then return Illegal_Instruction();
 
-  let 'n = num_elem;
-  let 'm = SEW;
-
-  let vm_val  : bits('n)             = read_vmask(num_elem, 0b0, zvreg);
-  let imm_val : bits('m)             = sign_extend(simm);
-  let vs2_val : vector('n, bits('m)) = read_vreg(num_elem, SEW, LMUL_pow, vs2);
-  let vd_val  : vector('n, bits('m)) = read_vreg(num_elem, SEW, LMUL_pow, vd);
-  var result  : vector('n, bits('m)) = vector_init(zeros());
-
-  let tail_ag : agtype = get_vtype_vta();
-  foreach (i from 0 to (num_elem - 1)) {
-    if i < start_element then {
-      result[i] = vd_val[i]
-    } else if i > end_element | i >= real_num_elem then {
-      result[i] = match tail_ag {
-        UNDISTURBED => vd_val[i],
-        AGNOSTIC    => vd_val[i] // TODO: configuration support
+  if SEW == 8 then {
+    let imm_val : bits(8) = sign_extend(simm);
+    foreach (i from 0 to (num_elem - 1)) {
+      if i >= start_element & i <= end_element & i < real_num_elem then {
+        assert(i < vlen);
+        let result : bits(8) =
+          if V(zvreg)[i] == bitone then imm_val
+          else read_single_element(8, i, vs2);
+        write_single_element(8, i, vd, result)
       }
-    } else {
-      // the merge operates on all body elements
-      result[i] = if vm_val[i] == bitone then imm_val else vs2_val[i]
+    }
+  } else if SEW == 16 then {
+    let imm_val : bits(16) = sign_extend(simm);
+    foreach (i from 0 to (num_elem - 1)) {
+      if i >= start_element & i <= end_element & i < real_num_elem then {
+        assert(i < vlen);
+        let result : bits(16) =
+          if V(zvreg)[i] == bitone then imm_val
+          else read_single_element(16, i, vs2);
+        write_single_element(16, i, vd, result)
+      }
+    }
+  } else if SEW == 32 then {
+    let imm_val : bits(32) = sign_extend(simm);
+    foreach (i from 0 to (num_elem - 1)) {
+      if i >= start_element & i <= end_element & i < real_num_elem then {
+        assert(i < vlen);
+        let result : bits(32) =
+          if V(zvreg)[i] == bitone then imm_val
+          else read_single_element(32, i, vs2);
+        write_single_element(32, i, vd, result)
+      }
+    }
+  } else {
+    let imm_val : bits(64) = sign_extend(simm);
+    foreach (i from 0 to (num_elem - 1)) {
+      if i >= start_element & i <= end_element & i < real_num_elem then {
+        assert(i < vlen);
+        let result : bits(64) =
+          if V(zvreg)[i] == bitone then imm_val
+          else read_single_element(64, i, vs2);
+        write_single_element(64, i, vd, result)
+      }
     }
   };
 
-  write_vreg(num_elem, SEW, LMUL_pow, vd, result);
   set_vstart(zeros());
   RETIRE_SUCCESS
 }
@@ -1232,23 +2236,44 @@ function clause execute(MOVETYPEI(vd, simm)) = {
 
   if illegal_vd_unmasked() then return Illegal_Instruction();
 
-  let 'n = num_elem;
-  let 'm = SEW;
-
-  let imm_val : bits('m)             = sign_extend(simm);
-  let vd_val  : vector('n, bits('m)) = read_vreg(num_elem, SEW, LMUL_pow, vd);
-
-  let (initial_result, mask) : (vector('n, bits('m)), bits('n)) = match init_masked_result(num_elem, SEW, LMUL_pow, vd_val, ones()) {
-    Ok(v)   => v,
-    Err(()) => return Illegal_Instruction()
+  if SEW == 8 then {
+    let imm_val : bits(8) = sign_extend(simm);
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, 0b1, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then write_single_element(8, i, vd, imm_val)
+    }
+  } else if SEW == 16 then {
+    let imm_val : bits(16) = sign_extend(simm);
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, 0b1, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then write_single_element(16, i, vd, imm_val)
+    }
+  } else if SEW == 32 then {
+    let imm_val : bits(32) = sign_extend(simm);
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, 0b1, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then write_single_element(32, i, vd, imm_val)
+    }
+  } else {
+    let imm_val : bits(64) = sign_extend(simm);
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, 0b1, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then write_single_element(64, i, vd, imm_val)
+    }
   };
-  var result = initial_result;
 
-  foreach (i from 0 to (num_elem - 1)) {
-    if mask[i] == bitone then result[i] = imm_val
-  };
-
-  write_vreg(num_elem, SEW, LMUL_pow, vd, result);
   set_vstart(zeros());
   RETIRE_SUCCESS
 }
@@ -1286,18 +2311,28 @@ function clause execute(VMVRTYPE(vs2, nreg, vd)) = {
 
   let EMUL_pow = log2(EMUL);
   let num_elem = get_num_elem(EMUL_pow, SEW);
-  let 'n = num_elem;
-  let 'm = SEW;
 
-  let vs2_val : vector('n, bits('m)) = read_vreg(num_elem, SEW, EMUL_pow, vs2);
-  let vd_val  : vector('n, bits('m)) = read_vreg(num_elem, SEW, EMUL_pow, vd);
-  var result  : vector('n, bits('m)) = vector_init(zeros());
-
-  foreach (i from 0 to (num_elem - 1)) {
-    result[i] = if i < start_element then vd_val[i] else vs2_val[i]
+  if SEW == 8 then {
+    foreach (i from start_element to (num_elem - 1)) {
+      let elem : bits(8) = read_single_element(8, i, vs2);
+      write_single_element(8, i, vd, elem)
+    }
+  } else if SEW == 16 then {
+    foreach (i from start_element to (num_elem - 1)) {
+      let elem : bits(16) = read_single_element(16, i, vs2);
+      write_single_element(16, i, vd, elem)
+    }
+  } else if SEW == 32 then {
+    foreach (i from start_element to (num_elem - 1)) {
+      let elem : bits(32) = read_single_element(32, i, vs2);
+      write_single_element(32, i, vd, elem)
+    }
+  } else {
+    foreach (i from start_element to (num_elem - 1)) {
+      let elem : bits(64) = read_single_element(64, i, vs2);
+      write_single_element(64, i, vd, elem)
+    }
   };
-
-  write_vreg(num_elem, SEW, EMUL_pow, vd, result);
   set_vstart(zeros());
   RETIRE_SUCCESS
 }
@@ -1342,82 +2377,262 @@ function clause execute(MVVTYPE(funct6, vm, vs2, vs1, vd)) = {
 
   if illegal_normal(vd, vm) then return Illegal_Instruction();
 
-  let 'n = num_elem;
-  let 'm = SEW;
-
-  let vm_val  : bits('n)     = read_vmask(num_elem, vm, zvreg);
-  let vs1_val : vector('n, bits('m)) = read_vreg(num_elem, SEW, LMUL_pow, vs1);
-  let vs2_val : vector('n, bits('m)) = read_vreg(num_elem, SEW, LMUL_pow, vs2);
-  let vd_val  : vector('n, bits('m)) = read_vreg(num_elem, SEW, LMUL_pow, vd);
-
-  let (initial_result, mask) : (vector('n, bits('m)), bits('n)) = match init_masked_result(num_elem, SEW, LMUL_pow, vd_val, vm_val) {
-    Ok(v)   => v,
-    Err(()) => return Illegal_Instruction()
-  };
-  var result = initial_result;
-
-  foreach (i from 0 to (num_elem - 1)) {
-    if mask[i] == bitone then {
-      result[i] = match funct6 {
-        MVV_VAADDU   => {
-                          let result_add = zero_extend('m + 1, vs2_val[i]) + zero_extend('m + 1, vs1_val[i]);
+  if SEW == 8 then {
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs1_val : bits(8) = read_single_element(8, i, vs1);
+        let vs2_val : bits(8) = read_single_element(8, i, vs2);
+        let result : bits(8) = match funct6 {
+          MVV_VAADDU => {
+                          let result_add : bits(9) = zero_extend(9, vs2_val) + zero_extend(9, vs1_val);
                           let rounding_incr = get_fixed_rounding_incr(result_add, 1);
-                          (result_add >> 1)['m - 1 .. 0] + zero_extend('m, rounding_incr)
+                          (result_add >> 1)[7 .. 0] + zero_extend(8, rounding_incr)
                         },
-        MVV_VAADD    => {
-                          let result_add = sign_extend('m + 1, vs2_val[i]) + sign_extend('m + 1, vs1_val[i]);
+          MVV_VAADD => {
+                         let result_add : bits(9) = sign_extend(9, vs2_val) + sign_extend(9, vs1_val);
+                         let rounding_incr = get_fixed_rounding_incr(result_add, 1);
+                         (result_add >> 1)[7 .. 0] + zero_extend(8, rounding_incr)
+                       },
+          MVV_VASUBU => {
+                          let result_sub : bits(9) = zero_extend(9, vs2_val) - zero_extend(9, vs1_val);
+                          let rounding_incr = get_fixed_rounding_incr(result_sub, 1);
+                          (result_sub >> 1)[7 .. 0] + zero_extend(8, rounding_incr)
+                        },
+          MVV_VASUB => {
+                         let result_sub : bits(9) = sign_extend(9, vs2_val) - sign_extend(9, vs1_val);
+                         let rounding_incr = get_fixed_rounding_incr(result_sub, 1);
+                         (result_sub >> 1)[7 .. 0] + zero_extend(8, rounding_incr)
+                       },
+          MVV_VMUL    => get_slice_int(8, signed(vs2_val) * signed(vs1_val), 0),
+          MVV_VMULH   => get_slice_int(8, signed(vs2_val) * signed(vs1_val), 8),
+          MVV_VMULHU  => get_slice_int(8, unsigned(vs2_val) * unsigned(vs1_val), 8),
+          MVV_VMULHSU => get_slice_int(8, signed(vs2_val) * unsigned(vs1_val), 8),
+          MVV_VDIVU   => {
+                           let divisor = unsigned(vs1_val);
+                           let dividend = unsigned(vs2_val);
+                           let q : int = if divisor == 0 then -1 else quot_round_zero(dividend, divisor);
+                           to_bits_unsafe(8, q)
+                         },
+          MVV_VDIV    => {
+                           let divisor = signed(vs1_val);
+                           let dividend = signed(vs2_val);
+                           let q : int = if divisor == 0 then -1 else quot_round_zero(dividend, divisor);
+                           let q' : int = if q > 127 then -128 else q;
+                           to_bits_unsafe(8, q')
+                         },
+          MVV_VREMU   => {
+                           let divisor = unsigned(vs1_val);
+                           let dividend = unsigned(vs2_val);
+                           let r : int = if divisor == 0 then dividend else rem_round_zero(dividend, divisor);
+                           to_bits_unsafe(8, r)
+                         },
+          MVV_VREM    => {
+                           let divisor = signed(vs1_val);
+                           let dividend = signed(vs2_val);
+                           let r : int = if divisor == 0 then dividend else rem_round_zero(dividend, divisor);
+                           to_bits_unsafe(8, r)
+                         }
+        };
+        write_single_element(8, i, vd, result)
+      }
+    }
+  } else if SEW == 16 then {
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs1_val : bits(16) = read_single_element(16, i, vs1);
+        let vs2_val : bits(16) = read_single_element(16, i, vs2);
+        let result : bits(16) = match funct6 {
+          MVV_VAADDU => {
+                          let result_add : bits(17) = zero_extend(17, vs2_val) + zero_extend(17, vs1_val);
                           let rounding_incr = get_fixed_rounding_incr(result_add, 1);
-                          (result_add >> 1)['m - 1 .. 0] + zero_extend('m, rounding_incr)
+                          (result_add >> 1)[15 .. 0] + zero_extend(16, rounding_incr)
                         },
-        MVV_VASUBU   => {
-                          let result_sub = zero_extend('m + 1, vs2_val[i]) - zero_extend('m + 1, vs1_val[i]);
+          MVV_VAADD => {
+                         let result_add : bits(17) = sign_extend(17, vs2_val) + sign_extend(17, vs1_val);
+                         let rounding_incr = get_fixed_rounding_incr(result_add, 1);
+                         (result_add >> 1)[15 .. 0] + zero_extend(16, rounding_incr)
+                       },
+          MVV_VASUBU => {
+                          let result_sub : bits(17) = zero_extend(17, vs2_val) - zero_extend(17, vs1_val);
                           let rounding_incr = get_fixed_rounding_incr(result_sub, 1);
-                          (result_sub >> 1)['m - 1 .. 0] + zero_extend('m, rounding_incr)
+                          (result_sub >> 1)[15 .. 0] + zero_extend(16, rounding_incr)
                         },
-        MVV_VASUB    => {
-                          let result_sub = sign_extend('m + 1, vs2_val[i]) - sign_extend('m + 1, vs1_val[i]);
+          MVV_VASUB => {
+                         let result_sub : bits(17) = sign_extend(17, vs2_val) - sign_extend(17, vs1_val);
+                         let rounding_incr = get_fixed_rounding_incr(result_sub, 1);
+                         (result_sub >> 1)[15 .. 0] + zero_extend(16, rounding_incr)
+                       },
+          MVV_VMUL    => get_slice_int(16, signed(vs2_val) * signed(vs1_val), 0),
+          MVV_VMULH   => get_slice_int(16, signed(vs2_val) * signed(vs1_val), 16),
+          MVV_VMULHU  => get_slice_int(16, unsigned(vs2_val) * unsigned(vs1_val), 16),
+          MVV_VMULHSU => get_slice_int(16, signed(vs2_val) * unsigned(vs1_val), 16),
+          MVV_VDIVU   => {
+                           let divisor = unsigned(vs1_val);
+                           let dividend = unsigned(vs2_val);
+                           let q : int = if divisor == 0 then -1 else quot_round_zero(dividend, divisor);
+                           to_bits_unsafe(16, q)
+                         },
+          MVV_VDIV    => {
+                           let divisor = signed(vs1_val);
+                           let dividend = signed(vs2_val);
+                           let q : int = if divisor == 0 then -1 else quot_round_zero(dividend, divisor);
+                           let q' : int = if q > 32767 then -32768 else q;
+                           to_bits_unsafe(16, q')
+                         },
+          MVV_VREMU   => {
+                           let divisor = unsigned(vs1_val);
+                           let dividend = unsigned(vs2_val);
+                           let r : int = if divisor == 0 then dividend else rem_round_zero(dividend, divisor);
+                           to_bits_unsafe(16, r)
+                         },
+          MVV_VREM    => {
+                           let divisor = signed(vs1_val);
+                           let dividend = signed(vs2_val);
+                           let r : int = if divisor == 0 then dividend else rem_round_zero(dividend, divisor);
+                           to_bits_unsafe(16, r)
+                         }
+        };
+        write_single_element(16, i, vd, result)
+      }
+    }
+  } else if SEW == 32 then {
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs1_val : bits(32) = read_single_element(32, i, vs1);
+        let vs2_val : bits(32) = read_single_element(32, i, vs2);
+        let result : bits(32) = match funct6 {
+          MVV_VAADDU => {
+                          let result_add : bits(33) = zero_extend(33, vs2_val) + zero_extend(33, vs1_val);
+                          let rounding_incr = get_fixed_rounding_incr(result_add, 1);
+                          (result_add >> 1)[31 .. 0] + zero_extend(32, rounding_incr)
+                        },
+          MVV_VAADD => {
+                         let result_add : bits(33) = sign_extend(33, vs2_val) + sign_extend(33, vs1_val);
+                         let rounding_incr = get_fixed_rounding_incr(result_add, 1);
+                         (result_add >> 1)[31 .. 0] + zero_extend(32, rounding_incr)
+                       },
+          MVV_VASUBU => {
+                          let result_sub : bits(33) = zero_extend(33, vs2_val) - zero_extend(33, vs1_val);
                           let rounding_incr = get_fixed_rounding_incr(result_sub, 1);
-                          (result_sub >> 1)['m - 1 .. 0] + zero_extend('m, rounding_incr)
+                          (result_sub >> 1)[31 .. 0] + zero_extend(32, rounding_incr)
                         },
-        MVV_VMUL     => get_slice_int(SEW, signed(vs2_val[i]) * signed(vs1_val[i]), 0),
-        MVV_VMULH    => get_slice_int(SEW, signed(vs2_val[i]) * signed(vs1_val[i]), SEW),
-        MVV_VMULHU   => get_slice_int(SEW, unsigned(vs2_val[i]) * unsigned(vs1_val[i]), SEW),
-        MVV_VMULHSU  => get_slice_int(SEW, signed(vs2_val[i]) * unsigned(vs1_val[i]), SEW),
-        MVV_VDIVU    => {
-                          let divisor = unsigned(vs1_val[i]);
-                          let dividend = unsigned(vs2_val[i]);
-                          let q : int = if divisor == 0 then -1 else quot_round_zero(dividend, divisor);
-                          to_bits_unsafe(SEW, q)
+          MVV_VASUB => {
+                         let result_sub : bits(33) = sign_extend(33, vs2_val) - sign_extend(33, vs1_val);
+                         let rounding_incr = get_fixed_rounding_incr(result_sub, 1);
+                         (result_sub >> 1)[31 .. 0] + zero_extend(32, rounding_incr)
+                       },
+          MVV_VMUL    => get_slice_int(32, signed(vs2_val) * signed(vs1_val), 0),
+          MVV_VMULH   => get_slice_int(32, signed(vs2_val) * signed(vs1_val), 32),
+          MVV_VMULHU  => get_slice_int(32, unsigned(vs2_val) * unsigned(vs1_val), 32),
+          MVV_VMULHSU => get_slice_int(32, signed(vs2_val) * unsigned(vs1_val), 32),
+          MVV_VDIVU   => {
+                           let divisor = unsigned(vs1_val);
+                           let dividend = unsigned(vs2_val);
+                           let q : int = if divisor == 0 then -1 else quot_round_zero(dividend, divisor);
+                           to_bits_unsafe(32, q)
+                         },
+          MVV_VDIV    => {
+                           let divisor = signed(vs1_val);
+                           let dividend = signed(vs2_val);
+                           let q : int = if divisor == 0 then -1 else quot_round_zero(dividend, divisor);
+                           let q' : int = if q > 2147483647 then -2147483648 else q;
+                           to_bits_unsafe(32, q')
+                         },
+          MVV_VREMU   => {
+                           let divisor = unsigned(vs1_val);
+                           let dividend = unsigned(vs2_val);
+                           let r : int = if divisor == 0 then dividend else rem_round_zero(dividend, divisor);
+                           to_bits_unsafe(32, r)
+                         },
+          MVV_VREM    => {
+                           let divisor = signed(vs1_val);
+                           let dividend = signed(vs2_val);
+                           let r : int = if divisor == 0 then dividend else rem_round_zero(dividend, divisor);
+                           to_bits_unsafe(32, r)
+                         }
+        };
+        write_single_element(32, i, vd, result)
+      }
+    }
+  } else {
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs1_val : bits(64) = read_single_element(64, i, vs1);
+        let vs2_val : bits(64) = read_single_element(64, i, vs2);
+        let result : bits(64) = match funct6 {
+          MVV_VAADDU => {
+                          let result_add : bits(65) = zero_extend(65, vs2_val) + zero_extend(65, vs1_val);
+                          let rounding_incr = get_fixed_rounding_incr(result_add, 1);
+                          (result_add >> 1)[63 .. 0] + zero_extend(64, rounding_incr)
                         },
-        MVV_VDIV     => {
-                          let elem_max : int = 2 ^ (SEW - 1) - 1;
-                          let elem_min : int = 0 - 2 ^ (SEW - 1);
-                          let divisor = signed(vs1_val[i]);
-                          let dividend = signed(vs2_val[i]);
-                          let q : int = if divisor == 0 then -1 else quot_round_zero(dividend, divisor);
-                          // check for signed overflow
-                          let q' : int = if q > elem_max then elem_min else q;
-                          to_bits_unsafe(SEW, q')
+          MVV_VAADD => {
+                         let result_add : bits(65) = sign_extend(65, vs2_val) + sign_extend(65, vs1_val);
+                         let rounding_incr = get_fixed_rounding_incr(result_add, 1);
+                         (result_add >> 1)[63 .. 0] + zero_extend(64, rounding_incr)
+                       },
+          MVV_VASUBU => {
+                          let result_sub : bits(65) = zero_extend(65, vs2_val) - zero_extend(65, vs1_val);
+                          let rounding_incr = get_fixed_rounding_incr(result_sub, 1);
+                          (result_sub >> 1)[63 .. 0] + zero_extend(64, rounding_incr)
                         },
-        MVV_VREMU    => {
-                          let divisor = unsigned(vs1_val[i]);
-                          let dividend = unsigned(vs2_val[i]);
-                          let r : int = if divisor == 0 then dividend else rem_round_zero(dividend, divisor);
-                          // signed overflow case returns zero naturally as required due to -1 divisor
-                          to_bits_unsafe(SEW, r)
-                        },
-        MVV_VREM     => {
-                          let divisor = signed(vs1_val[i]);
-                          let dividend = signed(vs2_val[i]);
-                          let r : int = if divisor == 0 then dividend else rem_round_zero(dividend, divisor);
-                          // signed overflow case returns zero naturally as required due to -1 divisor
-                          to_bits_unsafe(SEW, r)
-                        }
+          MVV_VASUB => {
+                         let result_sub : bits(65) = sign_extend(65, vs2_val) - sign_extend(65, vs1_val);
+                         let rounding_incr = get_fixed_rounding_incr(result_sub, 1);
+                         (result_sub >> 1)[63 .. 0] + zero_extend(64, rounding_incr)
+                       },
+          MVV_VMUL    => get_slice_int(64, signed(vs2_val) * signed(vs1_val), 0),
+          MVV_VMULH   => get_slice_int(64, signed(vs2_val) * signed(vs1_val), 64),
+          MVV_VMULHU  => get_slice_int(64, unsigned(vs2_val) * unsigned(vs1_val), 64),
+          MVV_VMULHSU => get_slice_int(64, signed(vs2_val) * unsigned(vs1_val), 64),
+          MVV_VDIVU   => {
+                           let divisor = unsigned(vs1_val);
+                           let dividend = unsigned(vs2_val);
+                           let q : int = if divisor == 0 then -1 else quot_round_zero(dividend, divisor);
+                           to_bits_unsafe(64, q)
+                         },
+          MVV_VDIV    => {
+                           let elem_max : int = 2 ^ 63 - 1;
+                           let elem_min : int = 0 - 2 ^ 63;
+                           let divisor = signed(vs1_val);
+                           let dividend = signed(vs2_val);
+                           let q : int = if divisor == 0 then -1 else quot_round_zero(dividend, divisor);
+                           let q' : int = if q > elem_max then elem_min else q;
+                           to_bits_unsafe(64, q')
+                         },
+          MVV_VREMU   => {
+                           let divisor = unsigned(vs1_val);
+                           let dividend = unsigned(vs2_val);
+                           let r : int = if divisor == 0 then dividend else rem_round_zero(dividend, divisor);
+                           to_bits_unsafe(64, r)
+                         },
+          MVV_VREM    => {
+                           let divisor = signed(vs1_val);
+                           let dividend = signed(vs2_val);
+                           let r : int = if divisor == 0 then dividend else rem_round_zero(dividend, divisor);
+                           to_bits_unsafe(64, r)
+                         }
+        };
+        write_single_element(64, i, vd, result)
       }
     }
   };
 
-  write_vreg(num_elem, SEW, LMUL_pow, vd, result);
   set_vstart(zeros());
   RETIRE_SUCCESS
 }
@@ -1462,32 +2677,84 @@ function clause execute(MVVMATYPE(funct6, vm, vs2, vs1, vd)) = {
 
   if illegal_normal(vd, vm) then return Illegal_Instruction();
 
-  let 'n = num_elem;
-  let 'm = SEW;
-
-  let vm_val  : bits('n)             = read_vmask(num_elem, vm, zvreg);
-  let vs1_val : vector('n, bits('m)) = read_vreg(num_elem, SEW, LMUL_pow, vs1);
-  let vs2_val : vector('n, bits('m)) = read_vreg(num_elem, SEW, LMUL_pow, vs2);
-  let vd_val  : vector('n, bits('m)) = read_vreg(num_elem, SEW, LMUL_pow, vd);
-
-  let (initial_result, mask) : (vector('n, bits('m)), bits('n)) = match init_masked_result(num_elem, SEW, LMUL_pow, vd_val, vm_val) {
-    Ok(v)   => v,
-    Err(()) => return Illegal_Instruction()
-  };
-  var result = initial_result;
-
-  foreach (i from 0 to (num_elem - 1)) {
-    if mask[i] == bitone then {
-      result[i] = match funct6 {
-        MVV_VMACC  => get_slice_int(SEW, signed(vs1_val[i]) * signed(vs2_val[i]), 0) + vd_val[i],
-        MVV_VNMSAC => vd_val[i] - get_slice_int(SEW, signed(vs1_val[i]) * signed(vs2_val[i]), 0),
-        MVV_VMADD  => get_slice_int(SEW, signed(vs1_val[i]) * signed(vd_val[i]), 0) + vs2_val[i],
-        MVV_VNMSUB => vs2_val[i] - get_slice_int(SEW, signed(vs1_val[i]) * signed(vd_val[i]), 0)
+  if SEW == 8 then {
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs1_val : bits(8) = read_single_element(8, i, vs1);
+        let vs2_val : bits(8) = read_single_element(8, i, vs2);
+        let vd_val : bits(8) = read_single_element(8, i, vd);
+        let result : bits(8) = match funct6 {
+          MVV_VMACC  => get_slice_int(8, signed(vs1_val) * signed(vs2_val), 0) + vd_val,
+          MVV_VNMSAC => vd_val - get_slice_int(8, signed(vs1_val) * signed(vs2_val), 0),
+          MVV_VMADD  => get_slice_int(8, signed(vs1_val) * signed(vd_val), 0) + vs2_val,
+          MVV_VNMSUB => vs2_val - get_slice_int(8, signed(vs1_val) * signed(vd_val), 0)
+        };
+        write_single_element(8, i, vd, result)
+      }
+    }
+  } else if SEW == 16 then {
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs1_val : bits(16) = read_single_element(16, i, vs1);
+        let vs2_val : bits(16) = read_single_element(16, i, vs2);
+        let vd_val : bits(16) = read_single_element(16, i, vd);
+        let result : bits(16) = match funct6 {
+          MVV_VMACC  => get_slice_int(16, signed(vs1_val) * signed(vs2_val), 0) + vd_val,
+          MVV_VNMSAC => vd_val - get_slice_int(16, signed(vs1_val) * signed(vs2_val), 0),
+          MVV_VMADD  => get_slice_int(16, signed(vs1_val) * signed(vd_val), 0) + vs2_val,
+          MVV_VNMSUB => vs2_val - get_slice_int(16, signed(vs1_val) * signed(vd_val), 0)
+        };
+        write_single_element(16, i, vd, result)
+      }
+    }
+  } else if SEW == 32 then {
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs1_val : bits(32) = read_single_element(32, i, vs1);
+        let vs2_val : bits(32) = read_single_element(32, i, vs2);
+        let vd_val : bits(32) = read_single_element(32, i, vd);
+        let result : bits(32) = match funct6 {
+          MVV_VMACC  => get_slice_int(32, signed(vs1_val) * signed(vs2_val), 0) + vd_val,
+          MVV_VNMSAC => vd_val - get_slice_int(32, signed(vs1_val) * signed(vs2_val), 0),
+          MVV_VMADD  => get_slice_int(32, signed(vs1_val) * signed(vd_val), 0) + vs2_val,
+          MVV_VNMSUB => vs2_val - get_slice_int(32, signed(vs1_val) * signed(vd_val), 0)
+        };
+        write_single_element(32, i, vd, result)
+      }
+    }
+  } else {
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs1_val : bits(64) = read_single_element(64, i, vs1);
+        let vs2_val : bits(64) = read_single_element(64, i, vs2);
+        let vd_val : bits(64) = read_single_element(64, i, vd);
+        let result : bits(64) = match funct6 {
+          MVV_VMACC  => get_slice_int(64, signed(vs1_val) * signed(vs2_val), 0) + vd_val,
+          MVV_VNMSAC => vd_val - get_slice_int(64, signed(vs1_val) * signed(vs2_val), 0),
+          MVV_VMADD  => get_slice_int(64, signed(vs1_val) * signed(vd_val), 0) + vs2_val,
+          MVV_VNMSUB => vs2_val - get_slice_int(64, signed(vs1_val) * signed(vd_val), 0)
+        };
+        write_single_element(64, i, vd, result)
       }
     }
   };
 
-  write_vreg(num_elem, SEW, LMUL_pow, vd, result);
   set_vstart(zeros());
   RETIRE_SUCCESS
 }
@@ -1532,36 +2799,71 @@ function clause execute(WVVTYPE(funct6, vm, vs2, vs1, vd)) = {
 
   assert(SEW_widen <= 64);
 
-  let 'n = num_elem;
-  let 'm = SEW;
-  let 'o = SEW_widen;
-
-  let vm_val  : bits('n)             = read_vmask(num_elem, vm, zvreg);
-  let vd_val  : vector('n, bits('o)) = read_vreg(num_elem, SEW_widen, LMUL_pow_widen, vd);
-  let vs1_val : vector('n, bits('m)) = read_vreg(num_elem, SEW, LMUL_pow, vs1);
-  let vs2_val : vector('n, bits('m)) = read_vreg(num_elem, SEW, LMUL_pow, vs2);
-
-  let (initial_result, mask) : (vector('n, bits('o)), bits('n)) = match init_masked_result(num_elem, SEW_widen, LMUL_pow_widen, vd_val, vm_val) {
-    Ok(v)   => v,
-    Err(()) => return Illegal_Instruction()
-  };
-  var result = initial_result;
-
-  foreach (i from 0 to (num_elem - 1)) {
-    if mask[i] == bitone then {
-      result[i] = match funct6 {
-        WVV_VADD    => to_bits_unsafe(SEW_widen, signed(vs2_val[i]) + signed(vs1_val[i])),
-        WVV_VSUB    => to_bits_unsafe(SEW_widen, signed(vs2_val[i]) - signed(vs1_val[i])),
-        WVV_VADDU   => to_bits_unsafe(SEW_widen, unsigned(vs2_val[i]) + unsigned(vs1_val[i])),
-        WVV_VSUBU   => to_bits_unsafe(SEW_widen, unsigned(vs2_val[i]) - unsigned(vs1_val[i])),
-        WVV_VWMUL   => to_bits_unsafe(SEW_widen, signed(vs2_val[i]) * signed(vs1_val[i])),
-        WVV_VWMULU  => to_bits_unsafe(SEW_widen, unsigned(vs2_val[i]) * unsigned(vs1_val[i])),
-        WVV_VWMULSU => to_bits_unsafe(SEW_widen, signed(vs2_val[i]) * unsigned(vs1_val[i]))
+  if SEW == 8 then {
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow_widen, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs1_val : bits(8) = read_single_element(8, i, vs1);
+        let vs2_val : bits(8) = read_single_element(8, i, vs2);
+        let result : bits(16) = match funct6 {
+          WVV_VADD    => to_bits_unsafe(16, signed(vs2_val) + signed(vs1_val)),
+          WVV_VSUB    => to_bits_unsafe(16, signed(vs2_val) - signed(vs1_val)),
+          WVV_VADDU   => to_bits_unsafe(16, unsigned(vs2_val) + unsigned(vs1_val)),
+          WVV_VSUBU   => to_bits_unsafe(16, unsigned(vs2_val) - unsigned(vs1_val)),
+          WVV_VWMUL   => to_bits_unsafe(16, signed(vs2_val) * signed(vs1_val)),
+          WVV_VWMULU  => to_bits_unsafe(16, unsigned(vs2_val) * unsigned(vs1_val)),
+          WVV_VWMULSU => to_bits_unsafe(16, signed(vs2_val) * unsigned(vs1_val))
+        };
+        write_single_element(16, i, vd, result)
+      }
+    }
+  } else if SEW == 16 then {
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow_widen, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs1_val : bits(16) = read_single_element(16, i, vs1);
+        let vs2_val : bits(16) = read_single_element(16, i, vs2);
+        let result : bits(32) = match funct6 {
+          WVV_VADD    => to_bits_unsafe(32, signed(vs2_val) + signed(vs1_val)),
+          WVV_VSUB    => to_bits_unsafe(32, signed(vs2_val) - signed(vs1_val)),
+          WVV_VADDU   => to_bits_unsafe(32, unsigned(vs2_val) + unsigned(vs1_val)),
+          WVV_VSUBU   => to_bits_unsafe(32, unsigned(vs2_val) - unsigned(vs1_val)),
+          WVV_VWMUL   => to_bits_unsafe(32, signed(vs2_val) * signed(vs1_val)),
+          WVV_VWMULU  => to_bits_unsafe(32, unsigned(vs2_val) * unsigned(vs1_val)),
+          WVV_VWMULSU => to_bits_unsafe(32, signed(vs2_val) * unsigned(vs1_val))
+        };
+        write_single_element(32, i, vd, result)
+      }
+    }
+  } else {
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow_widen, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs1_val : bits(32) = read_single_element(32, i, vs1);
+        let vs2_val : bits(32) = read_single_element(32, i, vs2);
+        let result : bits(64) = match funct6 {
+          WVV_VADD    => to_bits_unsafe(64, signed(vs2_val) + signed(vs1_val)),
+          WVV_VSUB    => to_bits_unsafe(64, signed(vs2_val) - signed(vs1_val)),
+          WVV_VADDU   => to_bits_unsafe(64, unsigned(vs2_val) + unsigned(vs1_val)),
+          WVV_VSUBU   => to_bits_unsafe(64, unsigned(vs2_val) - unsigned(vs1_val)),
+          WVV_VWMUL   => to_bits_unsafe(64, signed(vs2_val) * signed(vs1_val)),
+          WVV_VWMULU  => to_bits_unsafe(64, unsigned(vs2_val) * unsigned(vs1_val)),
+          WVV_VWMULSU => to_bits_unsafe(64, signed(vs2_val) * unsigned(vs1_val))
+        };
+        write_single_element(64, i, vd, result)
       }
     }
   };
 
-  write_vreg(num_elem, SEW_widen, LMUL_pow_widen, vd, result);
   set_vstart(zeros());
   RETIRE_SUCCESS
 }
@@ -1606,33 +2908,62 @@ function clause execute(WVTYPE(funct6, vm, vs2, vs1, vd)) = {
 
   assert(SEW_widen <= 64);
 
-  let 'n = num_elem;
-  let 'm = SEW;
-  let 'o = SEW_widen;
-
-  let vm_val  : bits('n)             = read_vmask(num_elem, vm, zvreg);
-  let vd_val  : vector('n, bits('o)) = read_vreg(num_elem, SEW_widen, LMUL_pow_widen, vd);
-  let vs1_val : vector('n, bits('m)) = read_vreg(num_elem, SEW, LMUL_pow, vs1);
-  let vs2_val : vector('n, bits('o)) = read_vreg(num_elem, SEW_widen, LMUL_pow_widen, vs2);
-
-  let (initial_result, mask) : (vector('n, bits('o)), bits('n)) = match init_masked_result(num_elem, SEW_widen, LMUL_pow_widen, vd_val, vm_val) {
-    Ok(v)   => v,
-    Err(()) => return Illegal_Instruction()
-  };
-  var result = initial_result;
-
-  foreach (i from 0 to (num_elem - 1)) {
-    if mask[i] == bitone then {
-      result[i] = match funct6 {
-        WV_VADD  => to_bits_unsafe(SEW_widen, signed(vs2_val[i]) + signed(vs1_val[i])),
-        WV_VSUB  => to_bits_unsafe(SEW_widen, signed(vs2_val[i]) - signed(vs1_val[i])),
-        WV_VADDU => to_bits_unsafe(SEW_widen, unsigned(vs2_val[i]) + unsigned(vs1_val[i])),
-        WV_VSUBU => to_bits_unsafe(SEW_widen, unsigned(vs2_val[i]) - unsigned(vs1_val[i]))
+  if SEW == 8 then {
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow_widen, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs1_val : bits(8) = read_single_element(8, i, vs1);
+        let vs2_val : bits(16) = read_single_element(16, i, vs2);
+        let result : bits(16) = match funct6 {
+          WV_VADD  => to_bits_unsafe(16, signed(vs2_val) + signed(vs1_val)),
+          WV_VSUB  => to_bits_unsafe(16, signed(vs2_val) - signed(vs1_val)),
+          WV_VADDU => to_bits_unsafe(16, unsigned(vs2_val) + unsigned(vs1_val)),
+          WV_VSUBU => to_bits_unsafe(16, unsigned(vs2_val) - unsigned(vs1_val))
+        };
+        write_single_element(16, i, vd, result)
+      }
+    }
+  } else if SEW == 16 then {
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow_widen, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs1_val : bits(16) = read_single_element(16, i, vs1);
+        let vs2_val : bits(32) = read_single_element(32, i, vs2);
+        let result : bits(32) = match funct6 {
+          WV_VADD  => to_bits_unsafe(32, signed(vs2_val) + signed(vs1_val)),
+          WV_VSUB  => to_bits_unsafe(32, signed(vs2_val) - signed(vs1_val)),
+          WV_VADDU => to_bits_unsafe(32, unsigned(vs2_val) + unsigned(vs1_val)),
+          WV_VSUBU => to_bits_unsafe(32, unsigned(vs2_val) - unsigned(vs1_val))
+        };
+        write_single_element(32, i, vd, result)
+      }
+    }
+  } else {
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow_widen, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs1_val : bits(32) = read_single_element(32, i, vs1);
+        let vs2_val : bits(64) = read_single_element(64, i, vs2);
+        let result : bits(64) = match funct6 {
+          WV_VADD  => to_bits_unsafe(64, signed(vs2_val) + signed(vs1_val)),
+          WV_VSUB  => to_bits_unsafe(64, signed(vs2_val) - signed(vs1_val)),
+          WV_VADDU => to_bits_unsafe(64, unsigned(vs2_val) + unsigned(vs1_val)),
+          WV_VSUBU => to_bits_unsafe(64, unsigned(vs2_val) - unsigned(vs1_val))
+        };
+        write_single_element(64, i, vd, result)
       }
     }
   };
 
-  write_vreg(num_elem, SEW_widen, LMUL_pow_widen, vd, result);
   set_vstart(zeros());
   RETIRE_SUCCESS
 }
@@ -1675,32 +3006,62 @@ function clause execute(WMVVTYPE(funct6, vm, vs2, vs1, vd)) = {
 
   assert(SEW_widen <= 64);
 
-  let 'n = num_elem;
-  let 'm = SEW;
-  let 'o = SEW_widen;
-
-  let vm_val  : bits('n)             = read_vmask(num_elem, vm, zvreg);
-  let vd_val  : vector('n, bits('o)) = read_vreg(num_elem, SEW_widen, LMUL_pow_widen, vd);
-  let vs1_val : vector('n, bits('m)) = read_vreg(num_elem, SEW, LMUL_pow, vs1);
-  let vs2_val : vector('n, bits('m)) = read_vreg(num_elem, SEW, LMUL_pow, vs2);
-
-  let (initial_result, mask) : (vector('n, bits('o)), bits('n)) = match init_masked_result(num_elem, SEW_widen, LMUL_pow_widen, vd_val, vm_val) {
-    Ok(v)   => v,
-    Err(()) => return Illegal_Instruction()
-  };
-  var result = initial_result;
-
-  foreach (i from 0 to (num_elem - 1)) {
-    if mask[i] == bitone then {
-      result[i] = match funct6 {
-        WMVV_VWMACC   => to_bits_unsafe(SEW_widen, signed(vs1_val[i]) * signed(vs2_val[i])) + vd_val[i],
-        WMVV_VWMACCU  => to_bits_unsafe(SEW_widen, unsigned(vs1_val[i]) * unsigned(vs2_val[i])) + vd_val[i],
-        WMVV_VWMACCSU => to_bits_unsafe(SEW_widen, signed(vs1_val[i]) * unsigned(vs2_val[i]))+ vd_val[i]
+  if SEW == 8 then {
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow_widen, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vd_val  : bits(16) = read_single_element(16, i, vd);
+        let vs1_val : bits(8) = read_single_element(8, i, vs1);
+        let vs2_val : bits(8) = read_single_element(8, i, vs2);
+        let result : bits(16) = match funct6 {
+          WMVV_VWMACC   => to_bits_unsafe(16, signed(vs1_val) * signed(vs2_val)) + vd_val,
+          WMVV_VWMACCU  => to_bits_unsafe(16, unsigned(vs1_val) * unsigned(vs2_val)) + vd_val,
+          WMVV_VWMACCSU => to_bits_unsafe(16, signed(vs1_val) * unsigned(vs2_val)) + vd_val
+        };
+        write_single_element(16, i, vd, result)
+      }
+    }
+  } else if SEW == 16 then {
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow_widen, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vd_val  : bits(32) = read_single_element(32, i, vd);
+        let vs1_val : bits(16) = read_single_element(16, i, vs1);
+        let vs2_val : bits(16) = read_single_element(16, i, vs2);
+        let result : bits(32) = match funct6 {
+          WMVV_VWMACC   => to_bits_unsafe(32, signed(vs1_val) * signed(vs2_val)) + vd_val,
+          WMVV_VWMACCU  => to_bits_unsafe(32, unsigned(vs1_val) * unsigned(vs2_val)) + vd_val,
+          WMVV_VWMACCSU => to_bits_unsafe(32, signed(vs1_val) * unsigned(vs2_val)) + vd_val
+        };
+        write_single_element(32, i, vd, result)
+      }
+    }
+  } else {
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow_widen, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vd_val  : bits(64) = read_single_element(64, i, vd);
+        let vs1_val : bits(32) = read_single_element(32, i, vs1);
+        let vs2_val : bits(32) = read_single_element(32, i, vs2);
+        let result : bits(64) = match funct6 {
+          WMVV_VWMACC   => to_bits_unsafe(64, signed(vs1_val) * signed(vs2_val)) + vd_val,
+          WMVV_VWMACCU  => to_bits_unsafe(64, unsigned(vs1_val) * unsigned(vs2_val)) + vd_val,
+          WMVV_VWMACCSU => to_bits_unsafe(64, signed(vs1_val) * unsigned(vs2_val)) + vd_val
+        };
+        write_single_element(64, i, vd, result)
       }
     }
   };
 
-  write_vreg(num_elem, SEW_widen, LMUL_pow_widen, vd, result);
   set_vstart(zeros());
   RETIRE_SUCCESS
 }
@@ -1752,34 +3113,64 @@ function clause execute(VEXTTYPE(funct6, vm, vs2, vd)) = {
 
   assert(SEW_div >= 8);
 
-  let 'n = num_elem;
-  let 'm = SEW;
-  let 'o = SEW_div;
-
-  let vm_val  : bits('n)             = read_vmask(num_elem, vm, zvreg);
-  let vd_val  : vector('n, bits('m)) = read_vreg(num_elem, SEW, LMUL_pow, vd);
-  let vs2_val : vector('n, bits('o)) = read_vreg(num_elem, SEW_div, LMUL_pow_div, vs2);
-
-  let (initial_result, mask) : (vector('n, bits('m)), bits('n)) = match init_masked_result(num_elem, SEW, LMUL_pow, vd_val, vm_val) {
-    Ok(v)   => v,
-    Err(()) => return Illegal_Instruction()
-  };
-  var result = initial_result;
-
-  foreach (i from 0 to (num_elem - 1)) {
-    if mask[i] == bitone then {
-      result[i] = match funct6 {
-        VEXT2_ZVF2 => zero_extend(vs2_val[i]),
-        VEXT2_SVF2 => sign_extend(vs2_val[i]),
-        VEXT4_ZVF4 => zero_extend(vs2_val[i]),
-        VEXT4_SVF4 => sign_extend(vs2_val[i]),
-        VEXT8_ZVF8 => zero_extend(vs2_val[i]),
-        VEXT8_SVF8 => sign_extend(vs2_val[i]),
+  // Dispatch on (SEW, SEW_frac_pow). Output width = SEW; input width = SEW_div.
+  // SEW=16: VF2(8->16), VF4/VF8 illegal (assert SEW_div>=8 already excludes them).
+  // SEW=32: VF2(16->32), VF4(8->32), VF8 illegal.
+  // SEW=64: VF2(32->64), VF4(16->64), VF8(8->64).
+  if SEW == 16 then {
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let result : bits(16) = match funct6 {
+          VEXT2_ZVF2 => zero_extend(read_single_element(8, i, vs2) : bits(8)),
+          VEXT2_SVF2 => sign_extend(read_single_element(8, i, vs2) : bits(8)),
+          _          => return Illegal_Instruction()
+        };
+        write_single_element(16, i, vd, result)
       }
     }
+  } else if SEW == 32 then {
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let result : bits(32) = match funct6 {
+          VEXT2_ZVF2 => zero_extend(read_single_element(16, i, vs2) : bits(16)),
+          VEXT2_SVF2 => sign_extend(read_single_element(16, i, vs2) : bits(16)),
+          VEXT4_ZVF4 => zero_extend(read_single_element(8,  i, vs2) : bits(8)),
+          VEXT4_SVF4 => sign_extend(read_single_element(8,  i, vs2) : bits(8)),
+          _          => return Illegal_Instruction()
+        };
+        write_single_element(32, i, vd, result)
+      }
+    }
+  } else if SEW == 64 then {
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let result : bits(64) = match funct6 {
+          VEXT2_ZVF2 => zero_extend(read_single_element(32, i, vs2) : bits(32)),
+          VEXT2_SVF2 => sign_extend(read_single_element(32, i, vs2) : bits(32)),
+          VEXT4_ZVF4 => zero_extend(read_single_element(16, i, vs2) : bits(16)),
+          VEXT4_SVF4 => sign_extend(read_single_element(16, i, vs2) : bits(16)),
+          VEXT8_ZVF8 => zero_extend(read_single_element(8,  i, vs2) : bits(8)),
+          VEXT8_SVF8 => sign_extend(read_single_element(8,  i, vs2) : bits(8))
+        };
+        write_single_element(64, i, vd, result)
+      }
+    }
+  } else {
+    return Illegal_Instruction()
   };
 
-  write_vreg(num_elem, SEW, LMUL_pow, vd, result);
   set_vstart(zeros());
   RETIRE_SUCCESS
 }
@@ -1846,39 +3237,58 @@ function clause execute(MVVCOMPRESS(vs2, vs1, vd)) = {
   if start_element != 0 | vs1 == vd | vs2 == vd | illegal_vd_unmasked()
   then return Illegal_Instruction();
 
-  let 'n = num_elem;
-  let 'm = SEW;
-
-  let vs1_val : bits('n)             = read_vmask(num_elem, 0b0, vs1);
-  let vs2_val : vector('n, bits('m)) = read_vreg(num_elem, SEW, LMUL_pow, vs2);
-  let vd_val  : vector('n, bits('m)) = read_vreg(num_elem, SEW, LMUL_pow, vd);
-  var result  : vector('n, bits('m)) = vector_init(zeros());
-
-  // body elements
   var vd_idx : nat = 0;
-  foreach (i from 0 to (num_elem - 1)) {
-    if i <= end_element then {
-      if vs1_val[i] == bitone then {
-        let 'p = vd_idx;
-        assert('p < 'n);
-        result['p] = vs2_val[i];
-        vd_idx = vd_idx + 1;
+
+  if SEW == 8 then {
+    foreach (i from 0 to (num_elem - 1)) {
+      if i <= end_element then {
+        assert(i < vlen);
+        if V(vs1)[i] == bitone then {
+          assert(vd_idx < num_elem);
+          let elem : bits(8) = read_single_element(8, i, vs2);
+          write_single_element(8, vd_idx, vd, elem);
+          vd_idx = vd_idx + 1
+        }
       }
     }
-  };
-  // tail elements
-  if vd_idx < num_elem then {
-    let tail_ag : agtype = get_vtype_vta();
-    let 'p = vd_idx;
-    foreach (i from 'p to (num_elem - 1)) {
-      result[i] = match tail_ag {
-        UNDISTURBED => vd_val[i],
-        AGNOSTIC    => vd_val[i] // TODO: configuration support
+  } else if SEW == 16 then {
+    foreach (i from 0 to (num_elem - 1)) {
+      if i <= end_element then {
+        assert(i < vlen);
+        if V(vs1)[i] == bitone then {
+          assert(vd_idx < num_elem);
+          let elem : bits(16) = read_single_element(16, i, vs2);
+          write_single_element(16, vd_idx, vd, elem);
+          vd_idx = vd_idx + 1
+        }
+      }
+    }
+  } else if SEW == 32 then {
+    foreach (i from 0 to (num_elem - 1)) {
+      if i <= end_element then {
+        assert(i < vlen);
+        if V(vs1)[i] == bitone then {
+          assert(vd_idx < num_elem);
+          let elem : bits(32) = read_single_element(32, i, vs2);
+          write_single_element(32, vd_idx, vd, elem);
+          vd_idx = vd_idx + 1
+        }
+      }
+    }
+  } else {
+    foreach (i from 0 to (num_elem - 1)) {
+      if i <= end_element then {
+        assert(i < vlen);
+        if V(vs1)[i] == bitone then {
+          assert(vd_idx < num_elem);
+          let elem : bits(64) = read_single_element(64, i, vs2);
+          write_single_element(64, vd_idx, vd, elem);
+          vd_idx = vd_idx + 1
+        }
       }
     }
   };
 
-  write_vreg(num_elem, SEW, LMUL_pow, vd, result);
   set_vstart(zeros());
   RETIRE_SUCCESS
 }
@@ -1917,91 +3327,298 @@ function clause execute(MVXTYPE(funct6, vm, vs2, rs1, vd)) = {
 
   if illegal_normal(vd, vm) then return Illegal_Instruction();
 
-  let 'n = num_elem;
-  let 'm = SEW;
-
-  let vm_val  : bits('n)             = read_vmask(num_elem, vm, zvreg);
-  let rs1_val : bits('m)             = get_scalar(rs1, SEW);
-  let vs2_val : vector('n, bits('m)) = read_vreg(num_elem, SEW, LMUL_pow, vs2);
-  let vd_val  : vector('n, bits('m)) = read_vreg(num_elem, SEW, LMUL_pow, vd);
-
-  let (initial_result, mask) : (vector('n, bits('m)), bits('n)) = match init_masked_result(num_elem, SEW, LMUL_pow, vd_val, vm_val) {
-    Ok(v)   => v,
-    Err(()) => return Illegal_Instruction()
-  };
-  var result = initial_result;
-
-  foreach (i from 0 to (num_elem - 1)) {
-    if mask[i] == bitone then {
-      result[i] = match funct6 {
-        MVX_VAADDU       => {
-                              let result_add = zero_extend('m + 1, vs2_val[i]) + zero_extend('m + 1, rs1_val);
-                              let rounding_incr = get_fixed_rounding_incr(result_add, 1);
-                              (result_add >> 1)['m - 1 .. 0] + zero_extend('m, rounding_incr)
-                            },
-        MVX_VAADD        => {
-                              let result_add = sign_extend('m + 1, vs2_val[i]) + sign_extend('m + 1, rs1_val);
-                              let rounding_incr = get_fixed_rounding_incr(result_add, 1);
-                              (result_add >> 1)['m - 1 .. 0] + zero_extend('m, rounding_incr)
-                            },
-        MVX_VASUBU       => {
-                              let result_sub = zero_extend('m + 1, vs2_val[i]) - zero_extend('m + 1, rs1_val);
-                              let rounding_incr = get_fixed_rounding_incr(result_sub, 1);
-                              (result_sub >> 1)['m - 1 .. 0] + zero_extend('m, rounding_incr)
-                            },
-        MVX_VASUB        => {
-                              let result_sub = sign_extend('m + 1, vs2_val[i]) - sign_extend('m + 1, rs1_val);
-                              let rounding_incr = get_fixed_rounding_incr(result_sub, 1);
-                              (result_sub >> 1)['m - 1 .. 0] + zero_extend('m, rounding_incr)
-                            },
-        MVX_VSLIDE1UP    => {
-                              if (vs2 == vd) then return Illegal_Instruction();
-                              if i == 0 then rs1_val else vs2_val[i - 1]
-                            },
-        MVX_VSLIDE1DOWN  => {
-                              let last_elem = get_end_element();
-                              assert(last_elem < num_elem);
-                              if i < last_elem then vs2_val[i + 1] else rs1_val
-                            },
-        MVX_VMUL         => get_slice_int(SEW, signed(vs2_val[i]) * signed(rs1_val), 0),
-        MVX_VMULH        => get_slice_int(SEW, signed(vs2_val[i]) * signed(rs1_val), SEW),
-        MVX_VMULHU       => get_slice_int(SEW, unsigned(vs2_val[i]) * unsigned(rs1_val), SEW),
-        MVX_VMULHSU      => get_slice_int(SEW, signed(vs2_val[i]) * unsigned(rs1_val), SEW),
-        MVX_VDIVU        => {
-                              let divisor = unsigned(rs1_val);
-                              let dividend = unsigned(vs2_val[i]);
-                              let q : int = if divisor == 0 then -1 else quot_round_zero(dividend, divisor);
-                              to_bits_unsafe(SEW, q)
-                            },
-        MVX_VDIV         => {
-                              let elem_max : int = 2 ^ (SEW - 1) - 1;
-                              let elem_min : int = 0 - 2 ^ (SEW - 1);
-                              let divisor = signed(rs1_val);
-                              let dividend = signed(vs2_val[i]);
-                              let q : int = if divisor == 0 then -1 else quot_round_zero(dividend, divisor);
-                              // check for signed overflow
-                              let q' : int = if q > elem_max then elem_min else q;
-                              to_bits_unsafe(SEW, q')
-                            },
-        MVX_VREMU        => {
-                              let divisor = unsigned(rs1_val);
-                              let dividend = unsigned(vs2_val[i]);
-                              let r : int = if divisor == 0 then dividend else rem_round_zero(dividend, divisor);
-                              // signed overflow case returns zero naturally as required due to -1 divisor
-                              to_bits_unsafe(SEW, r)
-                            },
-        MVX_VREM         => {
-                              let divisor = signed(rs1_val);
-                              let dividend = signed(vs2_val[i]);
-                              let r : int = if divisor == 0 then dividend else rem_round_zero(dividend, divisor);
-                              // signed overflow case returns zero naturally as required due to -1 divisor
-                              to_bits_unsafe(SEW, r)
-                            }
+  if SEW == 8 then {
+    let rs1_val : bits(8) = get_scalar(rs1, 8);
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(8) = read_single_element(8, i, vs2);
+        let result : bits(8) = match funct6 {
+          MVX_VAADDU => {
+                          let result_add : bits(9) = zero_extend(9, vs2_val) + zero_extend(9, rs1_val);
+                          let rounding_incr = get_fixed_rounding_incr(result_add, 1);
+                          (result_add >> 1)[7 .. 0] + zero_extend(8, rounding_incr)
+                        },
+          MVX_VAADD => {
+                         let result_add : bits(9) = sign_extend(9, vs2_val) + sign_extend(9, rs1_val);
+                         let rounding_incr = get_fixed_rounding_incr(result_add, 1);
+                         (result_add >> 1)[7 .. 0] + zero_extend(8, rounding_incr)
+                       },
+          MVX_VASUBU => {
+                          let result_sub : bits(9) = zero_extend(9, vs2_val) - zero_extend(9, rs1_val);
+                          let rounding_incr = get_fixed_rounding_incr(result_sub, 1);
+                          (result_sub >> 1)[7 .. 0] + zero_extend(8, rounding_incr)
+                        },
+          MVX_VASUB => {
+                         let result_sub : bits(9) = sign_extend(9, vs2_val) - sign_extend(9, rs1_val);
+                         let rounding_incr = get_fixed_rounding_incr(result_sub, 1);
+                         (result_sub >> 1)[7 .. 0] + zero_extend(8, rounding_incr)
+                       },
+          MVX_VSLIDE1UP => {
+                             if vs2 == vd then return Illegal_Instruction();
+                             if i == 0 then rs1_val else read_single_element(8, i - 1, vs2)
+                           },
+          MVX_VSLIDE1DOWN => {
+                               let last_elem = get_end_element();
+                               assert(last_elem < num_elem);
+                               if i < last_elem then read_single_element(8, i + 1, vs2) else rs1_val
+                             },
+          MVX_VMUL    => get_slice_int(8, signed(vs2_val) * signed(rs1_val), 0),
+          MVX_VMULH   => get_slice_int(8, signed(vs2_val) * signed(rs1_val), 8),
+          MVX_VMULHU  => get_slice_int(8, unsigned(vs2_val) * unsigned(rs1_val), 8),
+          MVX_VMULHSU => get_slice_int(8, signed(vs2_val) * unsigned(rs1_val), 8),
+          MVX_VDIVU   => {
+                           let divisor = unsigned(rs1_val);
+                           let dividend = unsigned(vs2_val);
+                           let q : int = if divisor == 0 then -1 else quot_round_zero(dividend, divisor);
+                           to_bits_unsafe(8, q)
+                         },
+          MVX_VDIV    => {
+                           let divisor = signed(rs1_val);
+                           let dividend = signed(vs2_val);
+                           let q : int = if divisor == 0 then -1 else quot_round_zero(dividend, divisor);
+                           let q' : int = if q > 127 then -128 else q;
+                           to_bits_unsafe(8, q')
+                         },
+          MVX_VREMU   => {
+                           let divisor = unsigned(rs1_val);
+                           let dividend = unsigned(vs2_val);
+                           let r : int = if divisor == 0 then dividend else rem_round_zero(dividend, divisor);
+                           to_bits_unsafe(8, r)
+                         },
+          MVX_VREM    => {
+                           let divisor = signed(rs1_val);
+                           let dividend = signed(vs2_val);
+                           let r : int = if divisor == 0 then dividend else rem_round_zero(dividend, divisor);
+                           to_bits_unsafe(8, r)
+                         }
+        };
+        write_single_element(8, i, vd, result)
+      }
+    }
+  } else if SEW == 16 then {
+    let rs1_val : bits(16) = get_scalar(rs1, 16);
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(16) = read_single_element(16, i, vs2);
+        let result : bits(16) = match funct6 {
+          MVX_VAADDU => {
+                          let result_add : bits(17) = zero_extend(17, vs2_val) + zero_extend(17, rs1_val);
+                          let rounding_incr = get_fixed_rounding_incr(result_add, 1);
+                          (result_add >> 1)[15 .. 0] + zero_extend(16, rounding_incr)
+                        },
+          MVX_VAADD => {
+                         let result_add : bits(17) = sign_extend(17, vs2_val) + sign_extend(17, rs1_val);
+                         let rounding_incr = get_fixed_rounding_incr(result_add, 1);
+                         (result_add >> 1)[15 .. 0] + zero_extend(16, rounding_incr)
+                       },
+          MVX_VASUBU => {
+                          let result_sub : bits(17) = zero_extend(17, vs2_val) - zero_extend(17, rs1_val);
+                          let rounding_incr = get_fixed_rounding_incr(result_sub, 1);
+                          (result_sub >> 1)[15 .. 0] + zero_extend(16, rounding_incr)
+                        },
+          MVX_VASUB => {
+                         let result_sub : bits(17) = sign_extend(17, vs2_val) - sign_extend(17, rs1_val);
+                         let rounding_incr = get_fixed_rounding_incr(result_sub, 1);
+                         (result_sub >> 1)[15 .. 0] + zero_extend(16, rounding_incr)
+                       },
+          MVX_VSLIDE1UP => {
+                             if vs2 == vd then return Illegal_Instruction();
+                             if i == 0 then rs1_val else read_single_element(16, i - 1, vs2)
+                           },
+          MVX_VSLIDE1DOWN => {
+                               let last_elem = get_end_element();
+                               assert(last_elem < num_elem);
+                               if i < last_elem then read_single_element(16, i + 1, vs2) else rs1_val
+                             },
+          MVX_VMUL    => get_slice_int(16, signed(vs2_val) * signed(rs1_val), 0),
+          MVX_VMULH   => get_slice_int(16, signed(vs2_val) * signed(rs1_val), 16),
+          MVX_VMULHU  => get_slice_int(16, unsigned(vs2_val) * unsigned(rs1_val), 16),
+          MVX_VMULHSU => get_slice_int(16, signed(vs2_val) * unsigned(rs1_val), 16),
+          MVX_VDIVU   => {
+                           let divisor = unsigned(rs1_val);
+                           let dividend = unsigned(vs2_val);
+                           let q : int = if divisor == 0 then -1 else quot_round_zero(dividend, divisor);
+                           to_bits_unsafe(16, q)
+                         },
+          MVX_VDIV    => {
+                           let divisor = signed(rs1_val);
+                           let dividend = signed(vs2_val);
+                           let q : int = if divisor == 0 then -1 else quot_round_zero(dividend, divisor);
+                           let q' : int = if q > 32767 then -32768 else q;
+                           to_bits_unsafe(16, q')
+                         },
+          MVX_VREMU   => {
+                           let divisor = unsigned(rs1_val);
+                           let dividend = unsigned(vs2_val);
+                           let r : int = if divisor == 0 then dividend else rem_round_zero(dividend, divisor);
+                           to_bits_unsafe(16, r)
+                         },
+          MVX_VREM    => {
+                           let divisor = signed(rs1_val);
+                           let dividend = signed(vs2_val);
+                           let r : int = if divisor == 0 then dividend else rem_round_zero(dividend, divisor);
+                           to_bits_unsafe(16, r)
+                         }
+        };
+        write_single_element(16, i, vd, result)
+      }
+    }
+  } else if SEW == 32 then {
+    let rs1_val : bits(32) = get_scalar(rs1, 32);
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(32) = read_single_element(32, i, vs2);
+        let result : bits(32) = match funct6 {
+          MVX_VAADDU => {
+                          let result_add : bits(33) = zero_extend(33, vs2_val) + zero_extend(33, rs1_val);
+                          let rounding_incr = get_fixed_rounding_incr(result_add, 1);
+                          (result_add >> 1)[31 .. 0] + zero_extend(32, rounding_incr)
+                        },
+          MVX_VAADD => {
+                         let result_add : bits(33) = sign_extend(33, vs2_val) + sign_extend(33, rs1_val);
+                         let rounding_incr = get_fixed_rounding_incr(result_add, 1);
+                         (result_add >> 1)[31 .. 0] + zero_extend(32, rounding_incr)
+                       },
+          MVX_VASUBU => {
+                          let result_sub : bits(33) = zero_extend(33, vs2_val) - zero_extend(33, rs1_val);
+                          let rounding_incr = get_fixed_rounding_incr(result_sub, 1);
+                          (result_sub >> 1)[31 .. 0] + zero_extend(32, rounding_incr)
+                        },
+          MVX_VASUB => {
+                         let result_sub : bits(33) = sign_extend(33, vs2_val) - sign_extend(33, rs1_val);
+                         let rounding_incr = get_fixed_rounding_incr(result_sub, 1);
+                         (result_sub >> 1)[31 .. 0] + zero_extend(32, rounding_incr)
+                       },
+          MVX_VSLIDE1UP => {
+                             if vs2 == vd then return Illegal_Instruction();
+                             if i == 0 then rs1_val else read_single_element(32, i - 1, vs2)
+                           },
+          MVX_VSLIDE1DOWN => {
+                               let last_elem = get_end_element();
+                               assert(last_elem < num_elem);
+                               if i < last_elem then read_single_element(32, i + 1, vs2) else rs1_val
+                             },
+          MVX_VMUL    => get_slice_int(32, signed(vs2_val) * signed(rs1_val), 0),
+          MVX_VMULH   => get_slice_int(32, signed(vs2_val) * signed(rs1_val), 32),
+          MVX_VMULHU  => get_slice_int(32, unsigned(vs2_val) * unsigned(rs1_val), 32),
+          MVX_VMULHSU => get_slice_int(32, signed(vs2_val) * unsigned(rs1_val), 32),
+          MVX_VDIVU   => {
+                           let divisor = unsigned(rs1_val);
+                           let dividend = unsigned(vs2_val);
+                           let q : int = if divisor == 0 then -1 else quot_round_zero(dividend, divisor);
+                           to_bits_unsafe(32, q)
+                         },
+          MVX_VDIV    => {
+                           let divisor = signed(rs1_val);
+                           let dividend = signed(vs2_val);
+                           let q : int = if divisor == 0 then -1 else quot_round_zero(dividend, divisor);
+                           let q' : int = if q > 2147483647 then -2147483648 else q;
+                           to_bits_unsafe(32, q')
+                         },
+          MVX_VREMU   => {
+                           let divisor = unsigned(rs1_val);
+                           let dividend = unsigned(vs2_val);
+                           let r : int = if divisor == 0 then dividend else rem_round_zero(dividend, divisor);
+                           to_bits_unsafe(32, r)
+                         },
+          MVX_VREM    => {
+                           let divisor = signed(rs1_val);
+                           let dividend = signed(vs2_val);
+                           let r : int = if divisor == 0 then dividend else rem_round_zero(dividend, divisor);
+                           to_bits_unsafe(32, r)
+                         }
+        };
+        write_single_element(32, i, vd, result)
+      }
+    }
+  } else {
+    let rs1_val : bits(64) = get_scalar(rs1, 64);
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(64) = read_single_element(64, i, vs2);
+        let result : bits(64) = match funct6 {
+          MVX_VAADDU => {
+                          let result_add : bits(65) = zero_extend(65, vs2_val) + zero_extend(65, rs1_val);
+                          let rounding_incr = get_fixed_rounding_incr(result_add, 1);
+                          (result_add >> 1)[63 .. 0] + zero_extend(64, rounding_incr)
+                        },
+          MVX_VAADD => {
+                         let result_add : bits(65) = sign_extend(65, vs2_val) + sign_extend(65, rs1_val);
+                         let rounding_incr = get_fixed_rounding_incr(result_add, 1);
+                         (result_add >> 1)[63 .. 0] + zero_extend(64, rounding_incr)
+                       },
+          MVX_VASUBU => {
+                          let result_sub : bits(65) = zero_extend(65, vs2_val) - zero_extend(65, rs1_val);
+                          let rounding_incr = get_fixed_rounding_incr(result_sub, 1);
+                          (result_sub >> 1)[63 .. 0] + zero_extend(64, rounding_incr)
+                        },
+          MVX_VASUB => {
+                         let result_sub : bits(65) = sign_extend(65, vs2_val) - sign_extend(65, rs1_val);
+                         let rounding_incr = get_fixed_rounding_incr(result_sub, 1);
+                         (result_sub >> 1)[63 .. 0] + zero_extend(64, rounding_incr)
+                       },
+          MVX_VSLIDE1UP => {
+                             if vs2 == vd then return Illegal_Instruction();
+                             if i == 0 then rs1_val else read_single_element(64, i - 1, vs2)
+                           },
+          MVX_VSLIDE1DOWN => {
+                               let last_elem = get_end_element();
+                               assert(last_elem < num_elem);
+                               if i < last_elem then read_single_element(64, i + 1, vs2) else rs1_val
+                             },
+          MVX_VMUL    => get_slice_int(64, signed(vs2_val) * signed(rs1_val), 0),
+          MVX_VMULH   => get_slice_int(64, signed(vs2_val) * signed(rs1_val), 64),
+          MVX_VMULHU  => get_slice_int(64, unsigned(vs2_val) * unsigned(rs1_val), 64),
+          MVX_VMULHSU => get_slice_int(64, signed(vs2_val) * unsigned(rs1_val), 64),
+          MVX_VDIVU   => {
+                           let divisor = unsigned(rs1_val);
+                           let dividend = unsigned(vs2_val);
+                           let q : int = if divisor == 0 then -1 else quot_round_zero(dividend, divisor);
+                           to_bits_unsafe(64, q)
+                         },
+          MVX_VDIV    => {
+                           let elem_max : int = 2 ^ 63 - 1;
+                           let elem_min : int = 0 - 2 ^ 63;
+                           let divisor = signed(rs1_val);
+                           let dividend = signed(vs2_val);
+                           let q : int = if divisor == 0 then -1 else quot_round_zero(dividend, divisor);
+                           let q' : int = if q > elem_max then elem_min else q;
+                           to_bits_unsafe(64, q')
+                         },
+          MVX_VREMU   => {
+                           let divisor = unsigned(rs1_val);
+                           let dividend = unsigned(vs2_val);
+                           let r : int = if divisor == 0 then dividend else rem_round_zero(dividend, divisor);
+                           to_bits_unsafe(64, r)
+                         },
+          MVX_VREM    => {
+                           let divisor = signed(rs1_val);
+                           let dividend = signed(vs2_val);
+                           let r : int = if divisor == 0 then dividend else rem_round_zero(dividend, divisor);
+                           to_bits_unsafe(64, r)
+                         }
+        };
+        write_single_element(64, i, vd, result)
       }
     }
   };
 
-  write_vreg(num_elem, SEW, LMUL_pow, vd, result);
   set_vstart(zeros());
   RETIRE_SUCCESS
 }
@@ -2048,32 +3665,84 @@ function clause execute(MVXMATYPE(funct6, vm, vs2, rs1, vd)) = {
 
   if illegal_normal(vd, vm) then return Illegal_Instruction();
 
-  let 'n = num_elem;
-  let 'm = SEW;
-
-  let vm_val  : bits('n)             = read_vmask(num_elem, vm, zvreg);
-  let rs1_val : bits('m)             = get_scalar(rs1, SEW);
-  let vs2_val : vector('n, bits('m)) = read_vreg(num_elem, SEW, LMUL_pow, vs2);
-  let vd_val  : vector('n, bits('m)) = read_vreg(num_elem, SEW, LMUL_pow, vd);
-
-  let (initial_result, mask) : (vector('n, bits('m)), bits('n)) = match init_masked_result(num_elem, SEW, LMUL_pow, vd_val, vm_val) {
-    Ok(v)   => v,
-    Err(()) => return Illegal_Instruction()
-  };
-  var result = initial_result;
-
-  foreach (i from 0 to (num_elem - 1)) {
-    if mask[i] == bitone then {
-      result[i] = match funct6 {
-        MVX_VMACC  => get_slice_int(SEW, signed(rs1_val) * signed(vs2_val[i]), 0) + vd_val[i],
-        MVX_VNMSAC => vd_val[i] - get_slice_int(SEW, signed(rs1_val) * signed(vs2_val[i]), 0),
-        MVX_VMADD  => get_slice_int(SEW, signed(rs1_val) * signed(vd_val[i]), 0) + vs2_val[i],
-        MVX_VNMSUB => vs2_val[i] - get_slice_int(SEW, signed(rs1_val) * signed(vd_val[i]), 0)
+  if SEW == 8 then {
+    let rs1_val : bits(8) = get_scalar(rs1, 8);
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(8) = read_single_element(8, i, vs2);
+        let vd_val : bits(8) = read_single_element(8, i, vd);
+        let result : bits(8) = match funct6 {
+          MVX_VMACC  => get_slice_int(8, signed(rs1_val) * signed(vs2_val), 0) + vd_val,
+          MVX_VNMSAC => vd_val - get_slice_int(8, signed(rs1_val) * signed(vs2_val), 0),
+          MVX_VMADD  => get_slice_int(8, signed(rs1_val) * signed(vd_val), 0) + vs2_val,
+          MVX_VNMSUB => vs2_val - get_slice_int(8, signed(rs1_val) * signed(vd_val), 0)
+        };
+        write_single_element(8, i, vd, result)
+      }
+    }
+  } else if SEW == 16 then {
+    let rs1_val : bits(16) = get_scalar(rs1, 16);
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(16) = read_single_element(16, i, vs2);
+        let vd_val : bits(16) = read_single_element(16, i, vd);
+        let result : bits(16) = match funct6 {
+          MVX_VMACC  => get_slice_int(16, signed(rs1_val) * signed(vs2_val), 0) + vd_val,
+          MVX_VNMSAC => vd_val - get_slice_int(16, signed(rs1_val) * signed(vs2_val), 0),
+          MVX_VMADD  => get_slice_int(16, signed(rs1_val) * signed(vd_val), 0) + vs2_val,
+          MVX_VNMSUB => vs2_val - get_slice_int(16, signed(rs1_val) * signed(vd_val), 0)
+        };
+        write_single_element(16, i, vd, result)
+      }
+    }
+  } else if SEW == 32 then {
+    let rs1_val : bits(32) = get_scalar(rs1, 32);
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(32) = read_single_element(32, i, vs2);
+        let vd_val : bits(32) = read_single_element(32, i, vd);
+        let result : bits(32) = match funct6 {
+          MVX_VMACC  => get_slice_int(32, signed(rs1_val) * signed(vs2_val), 0) + vd_val,
+          MVX_VNMSAC => vd_val - get_slice_int(32, signed(rs1_val) * signed(vs2_val), 0),
+          MVX_VMADD  => get_slice_int(32, signed(rs1_val) * signed(vd_val), 0) + vs2_val,
+          MVX_VNMSUB => vs2_val - get_slice_int(32, signed(rs1_val) * signed(vd_val), 0)
+        };
+        write_single_element(32, i, vd, result)
+      }
+    }
+  } else {
+    let rs1_val : bits(64) = get_scalar(rs1, 64);
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(64) = read_single_element(64, i, vs2);
+        let vd_val : bits(64) = read_single_element(64, i, vd);
+        let result : bits(64) = match funct6 {
+          MVX_VMACC  => get_slice_int(64, signed(rs1_val) * signed(vs2_val), 0) + vd_val,
+          MVX_VNMSAC => vd_val - get_slice_int(64, signed(rs1_val) * signed(vs2_val), 0),
+          MVX_VMADD  => get_slice_int(64, signed(rs1_val) * signed(vd_val), 0) + vs2_val,
+          MVX_VNMSUB => vs2_val - get_slice_int(64, signed(rs1_val) * signed(vd_val), 0)
+        };
+        write_single_element(64, i, vd, result)
       }
     }
   };
 
-  write_vreg(num_elem, SEW, LMUL_pow, vd, result);
   set_vstart(zeros());
   RETIRE_SUCCESS
 }
@@ -2118,36 +3787,71 @@ function clause execute(WVXTYPE(funct6, vm, vs2, rs1, vd)) = {
 
   assert(SEW_widen <= 64);
 
-  let 'n = num_elem;
-  let 'm = SEW;
-  let 'o = SEW_widen;
-
-  let vm_val  : bits('n)             = read_vmask(num_elem, vm, zvreg);
-  let vd_val  : vector('n, bits('o)) = read_vreg(num_elem, SEW_widen, LMUL_pow_widen, vd);
-  let rs1_val : bits('m)             = get_scalar(rs1, SEW);
-  let vs2_val : vector('n, bits('m)) = read_vreg(num_elem, SEW, LMUL_pow, vs2);
-
-  let (initial_result, mask) : (vector('n, bits('o)), bits('n)) = match init_masked_result(num_elem, SEW_widen, LMUL_pow_widen, vd_val, vm_val) {
-    Ok(v)   => v,
-    Err(()) => return Illegal_Instruction()
-  };
-  var result = initial_result;
-
-  foreach (i from 0 to (num_elem - 1)) {
-    if mask[i] == bitone then {
-      result[i] = match funct6 {
-        WVX_VADD    => to_bits_unsafe(SEW_widen, signed(vs2_val[i]) + signed(rs1_val)),
-        WVX_VSUB    => to_bits_unsafe(SEW_widen, signed(vs2_val[i]) - signed(rs1_val)),
-        WVX_VADDU   => to_bits_unsafe(SEW_widen, unsigned(vs2_val[i]) + unsigned(rs1_val)),
-        WVX_VSUBU   => to_bits_unsafe(SEW_widen, unsigned(vs2_val[i]) - unsigned(rs1_val)),
-        WVX_VWMUL   => to_bits_unsafe(SEW_widen, signed(vs2_val[i]) * signed(rs1_val)),
-        WVX_VWMULU  => to_bits_unsafe(SEW_widen, unsigned(vs2_val[i]) * unsigned(rs1_val)),
-        WVX_VWMULSU => to_bits_unsafe(SEW_widen, signed(vs2_val[i]) * unsigned(rs1_val))
+  if SEW == 8 then {
+    let rs1_val : bits(8) = get_scalar(rs1, 8);
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow_widen, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(8) = read_single_element(8, i, vs2);
+        let result : bits(16) = match funct6 {
+          WVX_VADD    => to_bits_unsafe(16, signed(vs2_val) + signed(rs1_val)),
+          WVX_VSUB    => to_bits_unsafe(16, signed(vs2_val) - signed(rs1_val)),
+          WVX_VADDU   => to_bits_unsafe(16, unsigned(vs2_val) + unsigned(rs1_val)),
+          WVX_VSUBU   => to_bits_unsafe(16, unsigned(vs2_val) - unsigned(rs1_val)),
+          WVX_VWMUL   => to_bits_unsafe(16, signed(vs2_val) * signed(rs1_val)),
+          WVX_VWMULU  => to_bits_unsafe(16, unsigned(vs2_val) * unsigned(rs1_val)),
+          WVX_VWMULSU => to_bits_unsafe(16, signed(vs2_val) * unsigned(rs1_val))
+        };
+        write_single_element(16, i, vd, result)
+      }
+    }
+  } else if SEW == 16 then {
+    let rs1_val : bits(16) = get_scalar(rs1, 16);
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow_widen, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(16) = read_single_element(16, i, vs2);
+        let result : bits(32) = match funct6 {
+          WVX_VADD    => to_bits_unsafe(32, signed(vs2_val) + signed(rs1_val)),
+          WVX_VSUB    => to_bits_unsafe(32, signed(vs2_val) - signed(rs1_val)),
+          WVX_VADDU   => to_bits_unsafe(32, unsigned(vs2_val) + unsigned(rs1_val)),
+          WVX_VSUBU   => to_bits_unsafe(32, unsigned(vs2_val) - unsigned(rs1_val)),
+          WVX_VWMUL   => to_bits_unsafe(32, signed(vs2_val) * signed(rs1_val)),
+          WVX_VWMULU  => to_bits_unsafe(32, unsigned(vs2_val) * unsigned(rs1_val)),
+          WVX_VWMULSU => to_bits_unsafe(32, signed(vs2_val) * unsigned(rs1_val))
+        };
+        write_single_element(32, i, vd, result)
+      }
+    }
+  } else {
+    let rs1_val : bits(32) = get_scalar(rs1, 32);
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow_widen, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(32) = read_single_element(32, i, vs2);
+        let result : bits(64) = match funct6 {
+          WVX_VADD    => to_bits_unsafe(64, signed(vs2_val) + signed(rs1_val)),
+          WVX_VSUB    => to_bits_unsafe(64, signed(vs2_val) - signed(rs1_val)),
+          WVX_VADDU   => to_bits_unsafe(64, unsigned(vs2_val) + unsigned(rs1_val)),
+          WVX_VSUBU   => to_bits_unsafe(64, unsigned(vs2_val) - unsigned(rs1_val)),
+          WVX_VWMUL   => to_bits_unsafe(64, signed(vs2_val) * signed(rs1_val)),
+          WVX_VWMULU  => to_bits_unsafe(64, unsigned(vs2_val) * unsigned(rs1_val)),
+          WVX_VWMULSU => to_bits_unsafe(64, signed(vs2_val) * unsigned(rs1_val))
+        };
+        write_single_element(64, i, vd, result)
       }
     }
   };
 
-  write_vreg(num_elem, SEW_widen, LMUL_pow_widen, vd, result);
   set_vstart(zeros());
   RETIRE_SUCCESS
 }
@@ -2191,33 +3895,62 @@ function clause execute(WXTYPE(funct6, vm, vs2, rs1, vd)) = {
 
   assert(SEW_widen <= 64);
 
-  let 'n = num_elem;
-  let 'm = SEW;
-  let 'o = SEW_widen;
-
-  let vm_val  : bits('n)             = read_vmask(num_elem, vm, zvreg);
-  let vd_val  : vector('n, bits('o)) = read_vreg(num_elem, SEW_widen, LMUL_pow_widen, vd);
-  let rs1_val : bits('m)             = get_scalar(rs1, SEW);
-  let vs2_val : vector('n, bits('o)) = read_vreg(num_elem, SEW_widen, LMUL_pow_widen, vs2);
-
-  let (initial_result, mask) : (vector('n, bits('o)), bits('n)) = match init_masked_result(num_elem, SEW_widen, LMUL_pow_widen, vd_val, vm_val) {
-    Ok(v)   => v,
-    Err(()) => return Illegal_Instruction()
-  };
-  var result = initial_result;
-
-  foreach (i from 0 to (num_elem - 1)) {
-    if mask[i] == bitone then {
-      result[i] = match funct6 {
-        WX_VADD  => to_bits_unsafe(SEW_widen, signed(vs2_val[i]) + signed(rs1_val)),
-        WX_VSUB  => to_bits_unsafe(SEW_widen, signed(vs2_val[i]) - signed(rs1_val)),
-        WX_VADDU => to_bits_unsafe(SEW_widen, unsigned(vs2_val[i]) + unsigned(rs1_val)),
-        WX_VSUBU => to_bits_unsafe(SEW_widen, unsigned(vs2_val[i]) - unsigned(rs1_val))
+  if SEW == 8 then {
+    let rs1_val : bits(8) = get_scalar(rs1, 8);
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow_widen, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(16) = read_single_element(16, i, vs2);
+        let result : bits(16) = match funct6 {
+          WX_VADD  => to_bits_unsafe(16, signed(vs2_val) + signed(rs1_val)),
+          WX_VSUB  => to_bits_unsafe(16, signed(vs2_val) - signed(rs1_val)),
+          WX_VADDU => to_bits_unsafe(16, unsigned(vs2_val) + unsigned(rs1_val)),
+          WX_VSUBU => to_bits_unsafe(16, unsigned(vs2_val) - unsigned(rs1_val))
+        };
+        write_single_element(16, i, vd, result)
+      }
+    }
+  } else if SEW == 16 then {
+    let rs1_val : bits(16) = get_scalar(rs1, 16);
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow_widen, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(32) = read_single_element(32, i, vs2);
+        let result : bits(32) = match funct6 {
+          WX_VADD  => to_bits_unsafe(32, signed(vs2_val) + signed(rs1_val)),
+          WX_VSUB  => to_bits_unsafe(32, signed(vs2_val) - signed(rs1_val)),
+          WX_VADDU => to_bits_unsafe(32, unsigned(vs2_val) + unsigned(rs1_val)),
+          WX_VSUBU => to_bits_unsafe(32, unsigned(vs2_val) - unsigned(rs1_val))
+        };
+        write_single_element(32, i, vd, result)
+      }
+    }
+  } else {
+    let rs1_val : bits(32) = get_scalar(rs1, 32);
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow_widen, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vs2_val : bits(64) = read_single_element(64, i, vs2);
+        let result : bits(64) = match funct6 {
+          WX_VADD  => to_bits_unsafe(64, signed(vs2_val) + signed(rs1_val)),
+          WX_VSUB  => to_bits_unsafe(64, signed(vs2_val) - signed(rs1_val)),
+          WX_VADDU => to_bits_unsafe(64, unsigned(vs2_val) + unsigned(rs1_val)),
+          WX_VSUBU => to_bits_unsafe(64, unsigned(vs2_val) - unsigned(rs1_val))
+        };
+        write_single_element(64, i, vd, result)
       }
     }
   };
 
-  write_vreg(num_elem, SEW_widen, LMUL_pow_widen, vd, result);
   set_vstart(zeros());
   RETIRE_SUCCESS
 }
@@ -2260,33 +3993,65 @@ function clause execute(WMVXTYPE(funct6, vm, vs2, rs1, vd)) = {
 
   assert(SEW_widen <= 64);
 
-  let 'n = num_elem;
-  let 'm = SEW;
-  let 'o = SEW_widen;
-
-  let vm_val  : bits('n)     = read_vmask(num_elem, vm, zvreg);
-  let vd_val  : vector('n, bits('o)) = read_vreg(num_elem, SEW_widen, LMUL_pow_widen, vd);
-  let rs1_val : bits('m)             = get_scalar(rs1, SEW);
-  let vs2_val : vector('n, bits('m)) = read_vreg(num_elem, SEW, LMUL_pow, vs2);
-
-  let (initial_result, mask) : (vector('n, bits('o)), bits('n)) = match init_masked_result(num_elem, SEW_widen, LMUL_pow_widen, vd_val, vm_val) {
-    Ok(v)   => v,
-    Err(()) => return Illegal_Instruction()
-  };
-  var result = initial_result;
-
-  foreach (i from 0 to (num_elem - 1)) {
-    if mask[i] == bitone then {
-      result[i] = match funct6 {
-        WMVX_VWMACCU  => (to_bits_unsafe(SEW_widen, unsigned(rs1_val) * unsigned(vs2_val[i]) )) + vd_val[i],
-        WMVX_VWMACC   => (to_bits_unsafe(SEW_widen, signed(rs1_val) * signed(vs2_val[i]) )) + vd_val[i],
-        WMVX_VWMACCUS => (to_bits_unsafe(SEW_widen, unsigned(rs1_val) * signed(vs2_val[i]) ))+ vd_val[i],
-        WMVX_VWMACCSU => (to_bits_unsafe(SEW_widen, signed(rs1_val) * unsigned(vs2_val[i]) ))+ vd_val[i]
+  if SEW == 8 then {
+    let rs1_val : bits(8) = get_scalar(rs1, 8);
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow_widen, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vd_val  : bits(16) = read_single_element(16, i, vd);
+        let vs2_val : bits(8) = read_single_element(8, i, vs2);
+        let result : bits(16) = match funct6 {
+          WMVX_VWMACCU  => to_bits_unsafe(16, unsigned(rs1_val) * unsigned(vs2_val)) + vd_val,
+          WMVX_VWMACC   => to_bits_unsafe(16, signed(rs1_val) * signed(vs2_val)) + vd_val,
+          WMVX_VWMACCUS => to_bits_unsafe(16, unsigned(rs1_val) * signed(vs2_val)) + vd_val,
+          WMVX_VWMACCSU => to_bits_unsafe(16, signed(rs1_val) * unsigned(vs2_val)) + vd_val
+        };
+        write_single_element(16, i, vd, result)
+      }
+    }
+  } else if SEW == 16 then {
+    let rs1_val : bits(16) = get_scalar(rs1, 16);
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow_widen, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vd_val  : bits(32) = read_single_element(32, i, vd);
+        let vs2_val : bits(16) = read_single_element(16, i, vs2);
+        let result : bits(32) = match funct6 {
+          WMVX_VWMACCU  => to_bits_unsafe(32, unsigned(rs1_val) * unsigned(vs2_val)) + vd_val,
+          WMVX_VWMACC   => to_bits_unsafe(32, signed(rs1_val) * signed(vs2_val)) + vd_val,
+          WMVX_VWMACCUS => to_bits_unsafe(32, unsigned(rs1_val) * signed(vs2_val)) + vd_val,
+          WMVX_VWMACCSU => to_bits_unsafe(32, signed(rs1_val) * unsigned(vs2_val)) + vd_val
+        };
+        write_single_element(32, i, vd, result)
+      }
+    }
+  } else {
+    let rs1_val : bits(32) = get_scalar(rs1, 32);
+    foreach (i from 0 to (num_elem - 1)) {
+      let active : bool = match is_active_vector_element(num_elem, LMUL_pow_widen, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let vd_val  : bits(64) = read_single_element(64, i, vd);
+        let vs2_val : bits(32) = read_single_element(32, i, vs2);
+        let result : bits(64) = match funct6 {
+          WMVX_VWMACCU  => to_bits_unsafe(64, unsigned(rs1_val) * unsigned(vs2_val)) + vd_val,
+          WMVX_VWMACC   => to_bits_unsafe(64, signed(rs1_val) * signed(vs2_val)) + vd_val,
+          WMVX_VWMACCUS => to_bits_unsafe(64, unsigned(rs1_val) * signed(vs2_val)) + vd_val,
+          WMVX_VWMACCSU => to_bits_unsafe(64, signed(rs1_val) * unsigned(vs2_val)) + vd_val
+        };
+        write_single_element(64, i, vd, result)
       }
     }
   };
 
-  write_vreg(num_elem, SEW_widen, LMUL_pow_widen, vd, result);
   set_vstart(zeros());
   RETIRE_SUCCESS
 }
@@ -2315,31 +4080,27 @@ function clause execute(VMVSX(rs1, vd)) = {
   if illegal_vd_unmasked() then return Illegal_Instruction();
 
   assert(num_elem > 0);
-  let 'n = num_elem;
-  let 'm = SEW;
 
-  let rs1_val : bits('m)             = get_scalar(rs1, 'm);
-  let vd_val  : vector('n, bits('m)) = read_vreg(num_elem, SEW, 0, vd);
-
-  let (initial_result, mask) : (vector('n, bits('m)), bits('n)) = match init_masked_result(num_elem, SEW, 0, vd_val, ones()) {
+  let active : bool = match is_body_vector_element(num_elem, 0, 0) {
     Ok(v)   => v,
     Err(()) => return Illegal_Instruction()
   };
-  var result = initial_result;
 
-  // one body element
-  if mask[0] == bitone then result[0] = rs1_val;
-
-  // others treated as tail elements
-  let tail_ag : agtype = get_vtype_vta();
-  foreach (i from 1 to (num_elem - 1)) {
-    result[i] = match tail_ag {
-      UNDISTURBED => vd_val[i],
-      AGNOSTIC    => vd_val[i] // TODO: configuration support
+  if active then {
+    if SEW == 8 then {
+      let rs1_val : bits(8) = get_scalar(rs1, 8);
+      write_single_element(8, 0, vd, rs1_val)
+    } else if SEW == 16 then {
+      let rs1_val : bits(16) = get_scalar(rs1, 16);
+      write_single_element(16, 0, vd, rs1_val)
+    } else if SEW == 32 then {
+      let rs1_val : bits(32) = get_scalar(rs1, 32);
+      write_single_element(32, 0, vd, rs1_val)
+    } else {
+      let rs1_val : bits(64) = get_scalar(rs1, 64);
+      write_single_element(64, 0, vd, rs1_val)
     }
   };
-
-  write_vreg(num_elem, SEW, 0, vd, result);
   set_vstart(zeros());
   RETIRE_SUCCESS
 }

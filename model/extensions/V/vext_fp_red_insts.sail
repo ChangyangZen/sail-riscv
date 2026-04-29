@@ -37,33 +37,67 @@ function process_rfvv_single(funct6, vm, vs2, vs1, vd, num_elem_vs, SEW, LMUL_po
 
   if unsigned(vl) == 0 then return RETIRE_SUCCESS; // if vl=0, no operation is performed
 
-  let 'n = num_elem_vs;
-  let 'd = num_elem_vd;
-  let 'm = SEW;
-
-  let vm_val  : bits('n)     = read_vmask(num_elem_vs, vm, zvreg);
-  let vd_val  : vector('d, bits('m)) = read_vreg(num_elem_vd, SEW, 0, vd);
-  let vs2_val : vector('n, bits('m)) = read_vreg(num_elem_vs, SEW, LMUL_pow, vs2);
-  let mask    : bits('n)     = match init_masked_source(num_elem_vs, LMUL_pow, vm_val) {
-    Ok(v)   => v,
-    Err(()) => return Illegal_Instruction()
-  };
-
-  var sum : bits('m) = read_single_element(SEW, 0, vs1); // vs1 regardless of LMUL setting
-  foreach (i from 0 to (num_elem_vs - 1)) {
-    if mask[i] == bitone then {
-      sum = match funct6 {
-        // currently ordered/unordered sum reductions do the same operations
-        FVV_VFREDOSUM   => fp_add(rm_3b, sum, vs2_val[i]),
-        FVV_VFREDUSUM   => fp_add(rm_3b, sum, vs2_val[i]),
-        FVV_VFREDMAX    => fp_max(sum, vs2_val[i]),
-        FVV_VFREDMIN    => fp_min(sum, vs2_val[i]),
-        _               => internal_error(__FILE__, __LINE__, "Widening op unexpected")
+  if SEW == 16 then {
+    var sum : bits(16) = read_single_element(16, 0, vs1); // vs1 regardless of LMUL setting
+    foreach (i from 0 to (num_elem_vs - 1)) {
+      let active : bool = match is_active_vector_element(num_elem_vs, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let elem : bits(16) = read_single_element(16, i, vs2);
+        sum = match funct6 {
+          // currently ordered/unordered sum reductions do the same operations
+          FVV_VFREDOSUM   => fp_add(rm_3b, sum, elem),
+          FVV_VFREDUSUM   => fp_add(rm_3b, sum, elem),
+          FVV_VFREDMAX    => fp_max(sum, elem),
+          FVV_VFREDMIN    => fp_min(sum, elem),
+          _               => internal_error(__FILE__, __LINE__, "Widening op unexpected")
+        }
       }
-    }
+    };
+    write_single_element(16, 0, vd, sum)
+  } else if SEW == 32 then {
+    var sum : bits(32) = read_single_element(32, 0, vs1); // vs1 regardless of LMUL setting
+    foreach (i from 0 to (num_elem_vs - 1)) {
+      let active : bool = match is_active_vector_element(num_elem_vs, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let elem : bits(32) = read_single_element(32, i, vs2);
+        sum = match funct6 {
+          // currently ordered/unordered sum reductions do the same operations
+          FVV_VFREDOSUM   => fp_add(rm_3b, sum, elem),
+          FVV_VFREDUSUM   => fp_add(rm_3b, sum, elem),
+          FVV_VFREDMAX    => fp_max(sum, elem),
+          FVV_VFREDMIN    => fp_min(sum, elem),
+          _               => internal_error(__FILE__, __LINE__, "Widening op unexpected")
+        }
+      }
+    };
+    write_single_element(32, 0, vd, sum)
+  } else {
+    var sum : bits(64) = read_single_element(64, 0, vs1); // vs1 regardless of LMUL setting
+    foreach (i from 0 to (num_elem_vs - 1)) {
+      let active : bool = match is_active_vector_element(num_elem_vs, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let elem : bits(64) = read_single_element(64, i, vs2);
+        sum = match funct6 {
+          // currently ordered/unordered sum reductions do the same operations
+          FVV_VFREDOSUM   => fp_add(rm_3b, sum, elem),
+          FVV_VFREDUSUM   => fp_add(rm_3b, sum, elem),
+          FVV_VFREDMAX    => fp_max(sum, elem),
+          FVV_VFREDMIN    => fp_min(sum, elem),
+          _               => internal_error(__FILE__, __LINE__, "Widening op unexpected")
+        }
+      }
+    };
+    write_single_element(64, 0, vd, sum)
   };
-
-  write_single_element(SEW, 0, vd, sum);
   // other elements in vd are treated as tail elements, currently remain unchanged
   // TODO: configuration support for agnostic behavior
   set_vstart(zeros());
@@ -82,28 +116,35 @@ function process_rfvv_widening_reduction(funct6, vm, vs2, vs1, vd, num_elem_vs, 
 
   if unsigned(vl) == 0 then return RETIRE_SUCCESS; // if vl=0, no operation is performed
 
-  let 'n = num_elem_vs;
-  let 'd = num_elem_vd;
-  let 'm = SEW;
-  let 'o = SEW_widen;
-
-  let vm_val  : bits('n)     = read_vmask(num_elem_vs, vm, zvreg);
-  let vd_val  : vector('d, bits('o)) = read_vreg(num_elem_vd, SEW_widen, 0, vd);
-  let vs2_val : vector('n, bits('m)) = read_vreg(num_elem_vs, SEW, LMUL_pow, vs2);
-  let mask    : bits('n)     = match init_masked_source(num_elem_vs, LMUL_pow, vm_val) {
-    Ok(v)   => v,
-    Err(()) => return Illegal_Instruction()
+  if SEW == 16 then {
+    var sum : bits(32) = read_single_element(32, 0, vs1); // vs1 regardless of LMUL setting
+    foreach (i from 0 to (num_elem_vs - 1)) {
+      let active : bool = match is_active_vector_element(num_elem_vs, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let elem : bits(16) = read_single_element(16, i, vs2);
+        // currently ordered/unordered sum reductions do the same operations
+        sum = fp_add(rm_3b, sum, fp_widen(elem))
+      }
+    };
+    write_single_element(32, 0, vd, sum)
+  } else {
+    var sum : bits(64) = read_single_element(64, 0, vs1); // vs1 regardless of LMUL setting
+    foreach (i from 0 to (num_elem_vs - 1)) {
+      let active : bool = match is_active_vector_element(num_elem_vs, LMUL_pow, vm, i) {
+        Ok(v)   => v,
+        Err(()) => return Illegal_Instruction()
+      };
+      if active then {
+        let elem : bits(32) = read_single_element(32, i, vs2);
+        // currently ordered/unordered sum reductions do the same operations
+        sum = fp_add(rm_3b, sum, fp_widen(elem))
+      }
+    };
+    write_single_element(64, 0, vd, sum)
   };
-
-  var sum : bits('o) = read_single_element(SEW_widen, 0, vs1); // vs1 regardless of LMUL setting
-  foreach (i from 0 to (num_elem_vs - 1)) {
-    if mask[i] == bitone then {
-      // currently ordered/unordered sum reductions do the same operations
-      sum = fp_add(rm_3b, sum, fp_widen(vs2_val[i]))
-    }
-  };
-
-  write_single_element(SEW_widen, 0, vd, sum);
   // other elements in vd are treated as tail elements, currently remain unchanged
   // TODO: configuration support for agnostic behavior
   set_vstart(zeros());

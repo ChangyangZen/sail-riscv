@@ -223,6 +223,41 @@ function get_start_element() = {
 val get_end_element : unit -> int
 function get_end_element() = unsigned(vl) - 1
 
+val is_active_vector_element : (nat1, int, bits(1), nat) -> result(bool, unit)
+function is_active_vector_element(num_elem, LMUL_pow, vm, i) = {
+  assert(num_elem <= vlen);
+  let start_element : nat = match get_start_element() {
+    Ok(v)   => v,
+    Err(()) => return Err(())
+  };
+  let end_element = get_end_element();
+  let real_num_elem = if LMUL_pow >= 0 then num_elem else num_elem / (2 ^ (0 - LMUL_pow));
+  assert(num_elem >= real_num_elem);
+
+  if i < start_element then Ok(false)
+  else if i > end_element then Ok(false)
+  else if i >= real_num_elem then Ok(false)
+  else if vm == 0b0 & V(zvreg)[i] == bitzero then Ok(false)
+  else Ok(true)
+}
+
+val is_body_vector_element : (nat1, int, nat) -> result(bool, unit)
+function is_body_vector_element(num_elem, LMUL_pow, i) = {
+  assert(num_elem <= vlen);
+  let start_element : nat = match get_start_element() {
+    Ok(v)   => v,
+    Err(()) => return Err(())
+  };
+  let end_element = get_end_element();
+  let real_num_elem = if LMUL_pow >= 0 then num_elem else num_elem / (2 ^ (0 - LMUL_pow));
+  assert(num_elem >= real_num_elem);
+
+  if i < start_element then Ok(false)
+  else if i > end_element then Ok(false)
+  else if i >= real_num_elem then Ok(false)
+  else Ok(true)
+}
+
 // Mask handling; creates a pre-masked result vector for vstart, vl, vta/vma, and vm
 // vm should be baked into vm_val from doing read_vmask
 // tail masking when lmul < 1 is handled in write_vreg
@@ -432,7 +467,7 @@ val get_shift_amount : forall 'n, 0 <= 'n . (bits('n), sew_bitsize) -> nat
 function get_shift_amount(bit_val, SEW) = {
   let lowlog2bits = log2(SEW);
   assert(0 < lowlog2bits & lowlog2bits < 'n);
-  unsigned(bit_val[lowlog2bits - 1 .. 0]);
+  unsigned(bit_val) % (2 ^ lowlog2bits);
 }
 
 // Fixed point rounding increment
@@ -443,16 +478,16 @@ function get_fixed_rounding_incr(vec_elem, shift_amount) = {
     let rounding_mode = vcsr[vxrm];
     // TODO: Change the type signature to enforce this assertion.
     assert(shift_amount < 'm);
+    let elem_int = unsigned(vec_elem);
+    let bit_below = (elem_int / (2 ^ (shift_amount - 1))) % 2 == 1;
+    let bit_at = (elem_int / (2 ^ shift_amount)) % 2 == 1;
+    let lower_below_nonzero = if shift_amount == 1 then false else elem_int % (2 ^ (shift_amount - 1)) != 0;
+    let lower_nonzero = elem_int % (2 ^ shift_amount) != 0;
     match rounding_mode {
-      0b00 => bit_to_bits(vec_elem[shift_amount - 1]),
-      0b01 => {
-        bool_to_bits(
-          vec_elem[shift_amount - 1] == bitone &
-          ((if shift_amount == 1 then false else vec_elem[shift_amount - 2 .. 0] != zeros()) | vec_elem[shift_amount] == bitone))
-      },
+      0b00 => bool_to_bits(bit_below),
+      0b01 => bool_to_bits(bit_below & (lower_below_nonzero | bit_at)),
       0b10 => 0b0,
-      0b11 => bool_to_bits(
-        vec_elem[shift_amount] != bitone & vec_elem[shift_amount - 1 .. 0] != zeros())
+      0b11 => bool_to_bits(not(bit_at) & lower_nonzero)
     }
   }
 }
@@ -460,25 +495,28 @@ function get_fixed_rounding_incr(vec_elem, shift_amount) = {
 // Fixed point unsigned saturation
 val unsigned_saturation : forall ('m 'n: Int), ('n >= 'm > 1). (int('m), bits('n)) -> bits('m)
 function unsigned_saturation(len, elem) = {
-  if unsigned(elem) > unsigned(ones('m)) then {
+  let max = 2 ^ len - 1;
+  if unsigned(elem) > max then {
     vcsr[vxsat] = 0b1;
-    ones('m)
+    to_bits_truncate(len, max)
   } else {
-    elem['m - 1 .. 0]
+    to_bits_truncate(len, unsigned(elem))
   }
 }
 
 // Fixed point signed saturation
 val signed_saturation : forall ('m 'n: Int), ('n >= 'm > 1). (int('m), bits('n)) -> bits('m)
 function signed_saturation(len, elem) = {
-  if signed(elem) > signed(0b0 @ ones('m - 1)) then {
+  let max = 2 ^ (len - 1) - 1;
+  let min = 0 - 2 ^ (len - 1);
+  if signed(elem) > max then {
     vcsr[vxsat] = 0b1;
-    0b0 @ ones('m - 1)
-  } else if signed(elem) < signed(0b1 @ zeros('m - 1)) then {
+    to_bits_truncate(len, max)
+  } else if signed(elem) < min then {
     vcsr[vxsat] = 0b1;
-    0b1 @ zeros('m - 1)
+    to_bits_truncate(len, 2 ^ (len - 1))
   } else {
-    elem['m - 1 .. 0]
+    to_bits_truncate(len, unsigned(elem))
   };
 }
 

@@ -239,9 +239,10 @@ function trapVectorMode_of_bits (m) =
     _    => TV_Reserved
   }
 
-// xRET types
-// (capitalized versions conflict with the instructions themselves)
-enum xRET_type = {mRET, sRET}
+// xRET types.
+// Keep these constructor names distinct from the MRET/SRET instruction
+// constructors, because Lem normalizes constructor casing globally.
+enum xRET_type = {XRET_M, XRET_S}
 
 // extension context status
 
