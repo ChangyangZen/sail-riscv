@@ -293,6 +293,9 @@ tool.
 The files under [`handwritten_support`](./handwritten_support) provide library definitions for
 each prover.
 
+Branch-specific notes for the pruned RV64IM Isabelle and Lean proof-generation
+flow are recorded in [`doc/TheoremProverGeneration.md`](./doc/TheoremProverGeneration.md).
+
 ## Directory Structure
 
 ```

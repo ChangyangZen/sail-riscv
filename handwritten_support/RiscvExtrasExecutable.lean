@@ -19,12 +19,12 @@ def string_of_int (z : Int) := s!"{z}"
 
 section defs
 
-variable [Arch]
-
 -- Platform definitions
 section Effectful
 
 variable {Register : Type} {RegisterType : Register → Type} [DecidableEq Register] [Hashable Register]
+
+namespace Sail.ConcurrencyInterfaceV1
 
 def plat_term_write {α} : α → SailM Unit := λ _ => panic "TODO"
 def plat_term_read : Unit → SailM String := λ _ => panic "TODO"
@@ -37,6 +37,8 @@ def valid_reservation : Unit → Bool := λ _ => false
 
 def get_16_random_bits : Unit → SailM (BitVec 16) := λ _ => panic "TODO"
 def sys_enable_experimental_extensions : Unit → Bool := λ _ => false
+
+end Sail.ConcurrencyInterfaceV1
 
 end Effectful
 
@@ -111,6 +113,6 @@ def riscv_f64roundToInt : BitVec 3 → BitVec 64 → Bool → (BitVec 5 × BitVe
 
 -- Termination of extensionEnabled
 instance : SizeOf extension where
-  sizeOf := extension.toCtorIdx
+  sizeOf := extension.ctorIdx
 
 macro_rules | `(tactic| decreasing_trivial) => `(tactic| decide)
