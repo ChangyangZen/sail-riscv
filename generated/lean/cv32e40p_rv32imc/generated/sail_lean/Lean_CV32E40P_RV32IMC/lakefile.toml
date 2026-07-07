@@ -1,0 +1,7 @@
+name = "Lean_CV32E40P_RV32IMC"
+defaultTargets = ["LeanCV32E40PRV32IMC"]
+moreLeanArgs = ["--tstack=400000"]
+
+[[lean_lib]]
+name = "LeanCV32E40PRV32IMC"
+leanOptions.weak.linter.style.nameCheck = false

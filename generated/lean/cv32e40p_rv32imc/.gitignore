@@ -1,0 +1,4 @@
+logs/
+runtime_tmp/
+sail_smt_cache/
+sail_smt_cache.db

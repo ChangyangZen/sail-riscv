@@ -1,0 +1,196 @@
+import LeanCV32E40PRV32IMC.Sail.Sail
+import LeanCV32E40PRV32IMC.Sail.BitVec
+import LeanCV32E40PRV32IMC.Sail.IntRange
+import LeanCV32E40PRV32IMC.Defs
+import LeanCV32E40PRV32IMC.Specialization
+import LeanCV32E40PRV32IMC.FakeReal
+import LeanCV32E40PRV32IMC.RiscvExtras
+
+set_option maxHeartbeats 1_000_000_000
+set_option maxRecDepth 1_000_000
+set_option linter.unusedVariables false
+set_option match.ignoreUnusedAlts true
+
+open Sail
+open ConcurrencyInterfaceV1
+
+noncomputable section
+
+namespace LeanCV32E40PRV32IMC.Functions
+
+open xRET_type
+open wxfunct6
+open wvxfunct6
+open wvvfunct6
+open wvfunct6
+open write_kind
+open wmvxfunct6
+open wmvvfunct6
+open vxsgfunct6
+open vxmsfunct6
+open vxmfunct6
+open vxmcfunct6
+open vxfunct6
+open vxcmpfunct6
+open vvmsfunct6
+open vvmfunct6
+open vvmcfunct6
+open vvfunct6
+open vvcmpfunct6
+open vregno
+open vregidx
+open vmlsop
+open vlewidth
+open visgfunct6
+open virtaddr
+open vimsfunct6
+open vimfunct6
+open vimcfunct6
+open vifunct6
+open vicmpfunct6
+open vfwunary0
+open vfunary1
+open vfunary0
+open vfnunary0
+open vextfunct6
+open uop
+open sopw
+open sop
+open rounding_mode
+open ropw
+open rop
+open rmvvfunct6
+open rivvfunct6
+open rfvvfunct6
+open regno
+open regidx
+open read_kind
+open pmpAddrMatch
+open physaddr
+open option
+open nxsfunct6
+open nxfunct6
+open nvsfunct6
+open nvfunct6
+open nisfunct6
+open nifunct6
+open mvxmafunct6
+open mvxfunct6
+open mvvmafunct6
+open mvvfunct6
+open mmfunct6
+open maskfunct3
+open landing_pad_expectation
+open iop
+open instruction
+open fwvvmafunct6
+open fwvvfunct6
+open fwvfunct6
+open fwvfmafunct6
+open fwvffunct6
+open fwffunct6
+open fvvmfunct6
+open fvvmafunct6
+open fvvfunct6
+open fvfmfunct6
+open fvfmafunct6
+open fvffunct6
+open fregno
+open fregidx
+open f_un_x_op_H
+open f_un_x_op_D
+open f_un_rm_xf_op_S
+open f_un_rm_xf_op_H
+open f_un_rm_xf_op_D
+open f_un_rm_fx_op_S
+open f_un_rm_fx_op_H
+open f_un_rm_fx_op_D
+open f_un_rm_ff_op_S
+open f_un_rm_ff_op_H
+open f_un_rm_ff_op_D
+open f_un_op_x_S
+open f_un_op_f_S
+open f_un_f_op_H
+open f_un_f_op_D
+open f_madd_op_S
+open f_madd_op_H
+open f_madd_op_D
+open f_bin_x_op_H
+open f_bin_x_op_D
+open f_bin_rm_op_S
+open f_bin_rm_op_H
+open f_bin_rm_op_D
+open f_bin_op_x_S
+open f_bin_op_f_S
+open f_bin_f_op_H
+open f_bin_f_op_D
+open extension
+open exception
+open ctl_result
+open csrop
+open cregidx
+open cfregidx
+open bop
+open barrier_kind
+open agtype
+open WaitReason
+open TrapVectorMode
+open Step
+open Software_Check_Code
+open SWCheckCodes
+open SATPMode
+open Register
+open Privilege
+open PmpAddrMatchType
+open PTW_Error
+open PTE_Check
+open InterruptType
+open ISA_Format
+open HartState
+open FetchResult
+open Ext_DataAddr_Check
+open ExtStatus
+open ExecutionResult
+open ExceptionType
+open Architecture
+open AccessType
+
+def undefined_Software_Check_Code (_ : Unit) : SailM Software_Check_Code := do
+  (internal_pick [SWC_NO_INFO, SWC_LANDING_PAD_FAULT])
+
+/-- Type quantifiers: arg_ : Nat, 0 ≤ arg_ ∧ arg_ ≤ 1 -/
+def Software_Check_Code_of_num (arg_ : Nat) : Software_Check_Code :=
+  match arg_ with
+  | 0 => SWC_NO_INFO
+  | _ => SWC_LANDING_PAD_FAULT
+
+def num_of_Software_Check_Code (arg_ : Software_Check_Code) : Int :=
+  match arg_ with
+  | SWC_NO_INFO => 0
+  | SWC_LANDING_PAD_FAULT => 1
+
+def software_check_cause_forwards (arg_ : Software_Check_Code) : (BitVec 2) :=
+  match arg_ with
+  | SWC_NO_INFO => 0b00#2
+  | SWC_LANDING_PAD_FAULT => 0b10#2
+
+def software_check_cause_backwards (arg_ : (BitVec 2)) : SailM Software_Check_Code := do
+  match arg_ with
+  | 0b00 => (pure SWC_NO_INFO)
+  | 0b10 => (pure SWC_LANDING_PAD_FAULT)
+  | _ =>
+    (do
+      assert false "Pattern match failure at unknown location"
+      throw Error.Exit)
+
+def software_check_cause_forwards_matches (arg_ : Software_Check_Code) : Bool :=
+  match arg_ with
+  | SWC_NO_INFO => true
+  | SWC_LANDING_PAD_FAULT => true
+
+def software_check_cause_backwards_matches (arg_ : (BitVec 2)) : Bool :=
+  match arg_ with
+  | 0b00 => true
+  | 0b10 => true
+  | _ => false
+
